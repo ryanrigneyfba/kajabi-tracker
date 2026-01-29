@@ -11,59 +11,67 @@
 <body>
   <div id="root"></div>div>
   <script type="text/babel">
-    const{useState,useEffect}=React;
+    const {useState,useEffect,useMemo}=React;
     function App(){
-      const[auth,setAuth]=useState(false);
-      const[pw,setPw]=useState("");
-      const[err,setErr]=useState("");
-      const[sales]=useState([
+      const [auth,setAuth]=useState(false);
+      const [pw,setPw]=useState("");
+      const [err,setErr]=useState("");
+      const [range,setRange]=useState("today");
+      const [sales]=useState([
         {id:1,date:"2026-01-28",offer:"Stay Viral Quickstart",revenue:9},
         {id:2,date:"2026-01-28",offer:"Stay Viral Quickstart",revenue:9},
         {id:3,date:"2026-01-28",offer:"Stay Viral Quickstart",revenue:9}
         ]);
-      const[range,setRange]=useState("all");
       useEffect(()=>{if(localStorage.getItem("kajabi_auth")==="true")setAuth(true)},[]);
+      const filteredSales=useMemo(()=>{
+        const now=new Date();
+        const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+        return sales.filter(s=>{
+          const saleDate=new Date(s.date);
+          const diffDays=Math.floor((today-saleDate)/(1000*60*60*24));
+          switch(range){
+            case "today":return diffDays===0;
+            case "yesterday":return diffDays===1;
+            case "7d":return diffDays>=0&&diffDays<=7;
+            case "30d":return diffDays>=0&&diffDays<=30;
+            case "12m":return diffDays>=0&&diffDays<=365;
+            case "all":default:return true;
+          }});
+      },[sales,range]);
+      const total=filteredSales.reduce((s,x)=>s+x.revenue,0);
+      const avgOrder=filteredSales.length>0?(total/filteredSales.length).toFixed(2):"0.00";
       if(!auth)return(
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
-          <div className="bg-white/10 rounded-2xl p-8 w-full max-w-md">
+          <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 w-full max-w-md border border-white/10">
             <h1 className="text-2xl font-bold text-white mb-6 text-center">Kajabi Sales Tracker</h1>
             <form onSubmit={e=>{e.preventDefault();if(pw==="stayviral2026"){localStorage.setItem("kajabi_auth","true");setAuth(true)}else{setErr("Wrong password")}}}>
               <input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="Password" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white mb-4"/>
               {err&&<p className="text-red-400 mb-4">{err}</p>}
               <button className="w-full bg-purple-500 text-white rounded-xl py-3">Login</button>
-            </form>
-          </div>
-        </div>
-        );
-      const total=sales.reduce((s,x)=>s+x.revenue,0);
+            </form></div></div>);
+      const ranges=[{key:"today",label:"Today"},{key:"yesterday",label:"Yesterday"},{key:"7d",label:"7 Days"},{key:"30d",label:"30 Days"},{key:"12m",label:"12 Months"},{key:"all",label:"All Time"}];
       return(
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
           <div className="max-w-4xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
               <h1 className="text-3xl font-bold text-white">Kajabi Sales Tracker</h1>
-              <div className="flex gap-2">
-                {["today","7d","30d","all"].map(r=>(
-          <button key={r} onClick={()=>setRange(r)} className={`px-3 py-1 rounded-lg text-sm ${range===r?"bg-purple-500 text-white":"text-slate-300"}`}>{r}</button>
-          ))}
-                <button onClick={()=>{localStorage.removeItem("kajabi_auth");setAuth(false)}} className="text-slate-400 ml-4">Logout</button>
-              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {ranges.map(r=>(<button key={r.key} onClick={()=>setRange(r.key)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${range===r.key?"bg-purple-500 text-white":"bg-white/10 text-slate-300"}`}>{r.label}</button>))}
+                <button onClick={()=>{localStorage.removeItem("kajabi_auth");setAuth(false)}} className="text-slate-400 ml-2 text-sm">Logout</button>
+              </div></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-white/10 rounded-xl p-5 border border-white/10"><p className="text-slate-400 text-sm mb-1">Revenue</p><p className="text-3xl font-bold text-white">${total}</p></div>
+              <div className="bg-white/10 rounded-xl p-5 border border-white/10"><p className="text-slate-400 text-sm mb-1">Sales</p><p className="text-3xl font-bold text-white">{filteredSales.length}</p></div>
+              <div className="bg-white/10 rounded-xl p-5 border border-white/10"><p className="text-slate-400 text-sm mb-1">Avg Order</p><p className="text-3xl font-bold text-white">${avgOrder}</p></div>
             </div>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-white/10 rounded-xl p-4"><p className="text-slate-400 text-sm">Revenue</p><p className="text-2xl font-bold text-white">${total}</p></div>
-              <div className="bg-white/10 rounded-xl p-4"><p className="text-slate-400 text-sm">Sales</p><p className="text-2xl font-bold text-white">{sales.length}</p></div>
-              <div className="bg-white/10 rounded-xl p-4"><p className="text-slate-400 text-sm">Avg Order</p><p className="text-2xl font-bold text-white">${(total/sales.length).toFixed(2)}</p></div>
-            </div>
-            <div className="bg-white/10 rounded-xl p-4">
-              <h2 className="text-lg font-semibold text-white mb-4">Recent Sales</h2>
-              <table className="w-full">
-                <thead><tr className="border-b border-white/10"><th className="text-left py-2 text-slate-400">Date</th><th className="text-left py-2 text-slate-400">Offer</th><th className="text-right py-2 text-slate-400">Revenue</th></tr></thead>
-                <tbody>{sales.map(s=>(<tr key={s.id} className="border-b border-white/5"><td className="py-2 text-white">{s.date}</td><td className="py-2 text-purple-300">{s.offer}</td><td className="py-2 text-right text-green-400">${s.revenue}</td></tr>))}</tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        );
-    }
+            <div className="bg-white/10 rounded-xl p-5 border border-white/10">
+              <h2 className="text-lg font-semibold text-white mb-4">Sales ({filteredSales.length})</h2>
+              {filteredSales.length===0?(<p className="text-slate-400 text-center py-8">No sales found for this time period</p>):(
+          <div className="overflow-x-auto"><table className="w-full">
+            <thead><tr className="border-b border-white/10"><th className="text-left py-3 text-slate-400">Date</th><th className="text-left py-3 text-slate-400">Offer</th><th className="text-right py-3 text-slate-400">Revenue</th></tr></thead>
+            <tbody>{filteredSales.map(s=>(<tr key={s.id} className="border-b border-white/5"><td className="py-3 text-white">{s.date}</td><td className="py-3 text-purple-300">{s.offer}</td><td className="py-3 text-right text-green-400">${s.revenue}</td></tr>))}</tbody>
+          </table></div>)}
+            </div></div></div>);}
     ReactDOM.render(<App/>,document.getElementById("root"));
   </script>
 </body>
