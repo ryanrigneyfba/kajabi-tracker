@@ -22,6 +22,8 @@
     // New sales from Google Sheet (Zapier adds here)
     const SHEET_ID = "1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U";
     const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+    // Booked Calls tab (gid=691644011)
+    const BOOKED_CALLS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=691644011`;
     const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
     function App() {
@@ -37,6 +39,7 @@
         const [tiktokSpend, setTiktokSpend] = useState(0);
         const [googleSpend, setGoogleSpend] = useState(0);
         const [sales, setSales] = useState([]);
+        const [bookedCalls, setBookedCalls] = useState([]);
         const [loadError, setLoadError] = useState("");
 
         useEffect(() => {
@@ -81,15 +84,16 @@
             return rows;
         };
 
-        // Load data from JSON (historical) + Google Sheet (new sales)
+        // Load data from JSON (historical) + Google Sheet (new sales) + Booked Calls
         const loadData = useCallback(async () => {
             setSyncing(true);
             setLoadError("");
             try {
-                // Fetch both sources in parallel
-                const [jsonRes, sheetRes] = await Promise.all([
+                // Fetch all sources in parallel
+                const [jsonRes, sheetRes, bookedRes] = await Promise.all([
                     fetch(JSON_URL + "?t=" + Date.now()),
-                    fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null)
+                    fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null),
+                    fetch(BOOKED_CALLS_URL + "&t=" + Date.now()).catch(() => null)
                 ]);
 
                 // Historical data from JSON
@@ -137,6 +141,22 @@
                 uniqueSales.sort((a, b) => b.date.localeCompare(a.date));
 
                 setSales(uniqueSales);
+
+                // Parse Booked Calls data
+                let calls = [];
+                if (bookedRes && bookedRes.ok) {
+                    const callsCsv = await bookedRes.text();
+                    const callsData = parseCSV(callsCsv);
+                    calls = callsData.map((row, idx) => ({
+                        id: idx,
+                        date: row.date || '',
+                        name: row.name || '',
+                        email: row.email || '',
+                        eventType: row['event type'] || ''
+                    })).filter(c => c.date);
+                }
+                setBookedCalls(calls);
+
                 setLastSync(new Date().toLocaleTimeString());
             } catch (err) {
                 console.error("Load error:", err);
@@ -218,6 +238,65 @@
             });
             return Object.entries(grouped).map(([date, revenue]) => ({date, revenue})).sort((a,b) => a.date.localeCompare(b.date));
         }, [filteredSales]);
+
+        // Filter booked calls by date range
+        const filteredBookedCalls = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+
+            return bookedCalls.filter(c => {
+                // Parse date - could be ISO format or MM/DD/YYYY
+                let callDate;
+                if (c.date.includes('T')) {
+                    // ISO format from Calendly
+                    callDate = new Date(c.date);
+                } else if (c.date.includes('-')) {
+                    const parts = c.date.split('-');
+                    callDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                } else {
+                    // Try parsing as-is
+                    callDate = new Date(c.date);
+                }
+
+                if (isNaN(callDate.getTime())) return false;
+
+                const diffTime = today.getTime() - callDate.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+                if(range === "custom" && startDate && endDate) {
+                    const start = new Date(startDate);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59);
+                    return callDate >= start && callDate <= end;
+                }
+
+                switch(range) {
+                    case "today": return diffDays === 0;
+                    case "yesterday": return diffDays === 1;
+                    case "2daysago": return diffDays === 2;
+                    case "7d": return diffDays >= 0 && diffDays <= 7;
+                    case "30d": return diffDays >= 0 && diffDays <= 30;
+                    case "12m": return diffDays >= 0 && diffDays <= 365;
+                    case "all": default: return true;
+                }
+            });
+        }, [bookedCalls, range, startDate, endDate, getPSTDate]);
+
+        // Booked calls per date chart data
+        const bookedCallsChartData = useMemo(() => {
+            const grouped = {};
+            filteredBookedCalls.forEach(c => {
+                // Extract just the date part
+                let dateStr;
+                if (c.date.includes('T')) {
+                    dateStr = c.date.split('T')[0];
+                } else {
+                    dateStr = c.date;
+                }
+                grouped[dateStr] = (grouped[dateStr] || 0) + 1;
+            });
+            return Object.entries(grouped).map(([date, count]) => ({date, count})).sort((a,b) => a.date.localeCompare(b.date));
+        }, [filteredBookedCalls]);
 
         const pieData = useMemo(() => {
             const grouped = {};
@@ -311,7 +390,7 @@
                     )}
 
                     {/* KPI Cards */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-4 sm:mb-6">
                         <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
                             <p className="text-slate-400 text-xs sm:text-sm mb-1">Revenue</p>
                             <p className="text-xl sm:text-3xl font-bold text-white">${totalRevenue.toLocaleString()}</p>
@@ -319,6 +398,10 @@
                         <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
                             <p className="text-slate-400 text-xs sm:text-sm mb-1">Sales</p>
                             <p className="text-xl sm:text-3xl font-bold text-white">{filteredSales.length}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Booked Calls</p>
+                            <p className="text-xl sm:text-3xl font-bold text-cyan-400">{filteredBookedCalls.length}</p>
                         </div>
                         <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
                             <p className="text-slate-400 text-xs sm:text-sm mb-1">Avg Order</p>
@@ -401,8 +484,8 @@
                         </div>
                     </div>
 
-                    {/* Revenue Breakdown */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                    {/* Revenue & Calls Breakdown */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
                         <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
                             <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Revenue by Day</h2>
                             {chartData.length > 0 ? (
@@ -418,6 +501,22 @@
                                     ))}
                                 </div>
                             ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No data</p>}
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Booked Calls by Day</h2>
+                            {bookedCallsChartData.length > 0 ? (
+                                <div className="space-y-1.5 sm:space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
+                                    {bookedCallsChartData.slice(-7).map((d, i) => (
+                                        <div key={i} className="flex justify-between items-center">
+                                            <span className="text-slate-300 text-xs sm:text-sm">{d.date.slice(5)}</span>
+                                            <div className="flex items-center gap-1 sm:gap-2">
+                                                <div className="h-1.5 sm:h-2 bg-cyan-500 rounded" style={{width: `${Math.min(60, (d.count / Math.max(...bookedCallsChartData.map(x => x.count), 1)) * 60)}px`}}></div>
+                                                <span className="text-cyan-400 font-medium text-xs sm:text-sm">{d.count}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No calls yet</p>}
                         </div>
                         <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
                             <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Revenue by Offer</h2>
