@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Stay Viral Master Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+    const {useState, useEffect, useMemo, useCallback} = React;
+
+    // Charts disabled for now - using simple display
+    const ChartsAvailable = false;
+
+    // Historical data (Jan 1-28, 2026) from JSON
+    const JSON_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/transactions.json";
+    // New sales from Google Sheet (Zapier adds here)
+    const SHEET_ID = "1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U";
+    const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+    const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
+
+    function App() {
+        const [auth, setAuth] = useState(false);
+        const [pw, setPw] = useState("");
+        const [err, setErr] = useState("");
+        const [range, setRange] = useState("all");
+        const [startDate, setStartDate] = useState("");
+        const [endDate, setEndDate] = useState("");
+        const [syncing, setSyncing] = useState(false);
+        const [lastSync, setLastSync] = useState(null);
+        const [metaSpend, setMetaSpend] = useState(0);
+        const [tiktokSpend, setTiktokSpend] = useState(0);
+        const [googleSpend, setGoogleSpend] = useState(0);
+        const [sales, setSales] = useState([]);
+        const [loadError, setLoadError] = useState("");
+
+        useEffect(() => {
+            if(localStorage.getItem("kajabi_auth") === "true") setAuth(true);
+        }, []);
+
+        // Function to get PST date
+        const getPSTDate = useCallback((date = new Date()) => {
+            const pstOffset = -8 * 60; // PST is UTC-8
+            const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+            return new Date(utc + (pstOffset * 60000));
+        }, []);
+
+        // Parse CSV helper
+        const parseCSV = (csv) => {
+            const lines = csv.split('\n').filter(line => line.trim());
+            if (lines.length < 2) return [];
+
+            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+            const rows = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+
+                for (let char of lines[i]) {
+                    if (char === '"') inQuotes = !inQuotes;
+                    else if (char === ',' && !inQuotes) {
+                        values.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                values.push(current.trim());
+
+                const row = {};
+                headers.forEach((h, idx) => row[h] = values[idx] || '');
+                rows.push(row);
+            }
+            return rows;
+        };
+
+        // Load data from JSON (historical) + Google Sheet (new sales)
+        const loadData = useCallback(async () => {
+            setSyncing(true);
+            setLoadError("");
+            try {
+                // Fetch both sources in parallel
+                const [jsonRes, sheetRes] = await Promise.all([
+                    fetch(JSON_URL + "?t=" + Date.now()),
+                    fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null)
+                ]);
+
+                // Historical data from JSON
+                let historicalSales = [];
+                if (jsonRes.ok) {
+                    const jsonData = await jsonRes.json();
+                    historicalSales = jsonData.map((row, idx) => ({
+                        id: idx + 1,
+                        date: row.date || '',
+                        datetime: row.datetime || '',
+                        offer: row.offer || '',
+                        revenue: parseFloat(row.revenue) || 0,
+                        email: row.email || '',
+                        source: row.source || ''
+                    })).filter(s => s.date && s.revenue > 0);
+                }
+
+                // New sales from Google Sheet
+                let newSales = [];
+                if (sheetRes && sheetRes.ok) {
+                    const csv = await sheetRes.text();
+                    const sheetData = parseCSV(csv);
+                    newSales = sheetData.map((row, idx) => ({
+                        id: 10000 + idx,
+                        date: row.date || '',
+                        datetime: row.date || '',  // Sheet uses Date column for both
+                        offer: row.offer || '',
+                        revenue: parseFloat(row.revenue) || 0,
+                        email: row['customer email'] || '',  // Sheet header is "Customer Email"
+                        source: row.source || ''
+                    })).filter(s => s.date && s.revenue > 0);
+                }
+
+                // Combine and deduplicate by email+datetime+revenue
+                const allSales = [...historicalSales, ...newSales];
+                const seen = new Set();
+                const uniqueSales = allSales.filter(s => {
+                    const key = `${s.email}-${s.datetime}-${s.revenue}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                // Sort by date descending (newest first in data, table will show properly)
+                uniqueSales.sort((a, b) => b.date.localeCompare(a.date));
+
+                setSales(uniqueSales);
+                setLastSync(new Date().toLocaleTimeString());
+            } catch (err) {
+                console.error("Load error:", err);
+                setLoadError("Could not load data. Check your connection.");
+            } finally {
+                setSyncing(false);
+            }
+        }, []);
+
+        // Initial load and auto-refresh
+        useEffect(() => {
+            if (auth) {
+                loadData();
+                const interval = setInterval(loadData, REFRESH_INTERVAL);
+                return () => clearInterval(interval);
+            }
+        }, [auth, loadData]);
+
+        // Filter sales by date range (using PST)
+        const filteredSales = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+
+            return sales.filter(s => {
+                const saleDateParts = s.date.split('-');
+                const saleDate = new Date(
+                    parseInt(saleDateParts[0]),
+                    parseInt(saleDateParts[1]) - 1,
+                    parseInt(saleDateParts[2])
+                );
+                const diffTime = today.getTime() - saleDate.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+                if(range === "custom" && startDate && endDate) {
+                    const start = new Date(startDate);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59);
+                    return saleDate >= start && saleDate <= end;
+                }
+
+                switch(range) {
+                    case "today": return diffDays === 0;
+                    case "yesterday": return diffDays === 1;
+                    case "2daysago": return diffDays === 2;
+                    case "7d": return diffDays >= 0 && diffDays <= 7;
+                    case "30d": return diffDays >= 0 && diffDays <= 30;
+                    case "12m": return diffDays >= 0 && diffDays <= 365;
+                    case "all": default: return true;
+                }
+            });
+        }, [sales, range, startDate, endDate, getPSTDate]);
+
+        // Calculate metrics
+        const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
+        const avgOrder = filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : "0.00";
+        const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
+
+        // 5% affiliate commission on ALL sales
+        const affiliateCommission = totalRevenue * 0.05;
+
+        // 17.5% sales team commission on sales over $999
+        const commissionableSales = filteredSales.filter(s => s.revenue > 999);
+        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
+
+        // Total expenses and profit
+        const totalCommissions = affiliateCommission + salesTeamCommission;
+        const totalExpenses = totalAdSpend + totalCommissions;
+        const profit = totalRevenue - totalExpenses;
+
+        // Agency payouts placeholder (under construction)
+        const agencyPayout = 0;
+        const profitIncludingAgency = profit - agencyPayout;
+
+        // Chart data
+        const chartData = useMemo(() => {
+            const grouped = {};
+            filteredSales.forEach(s => {
+                grouped[s.date] = (grouped[s.date] || 0) + s.revenue;
+            });
+            return Object.entries(grouped).map(([date, revenue]) => ({date, revenue})).sort((a,b) => a.date.localeCompare(b.date));
+        }, [filteredSales]);
+
+        const pieData = useMemo(() => {
+            const grouped = {};
+            filteredSales.forEach(s => {
+                grouped[s.offer] = (grouped[s.offer] || 0) + s.revenue;
+            });
+            return Object.entries(grouped).map(([name, value]) => ({name, value}));
+        }, [filteredSales]);
+
+        const COLORS = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+
+        if(!auth) return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
+                <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 w-full max-w-md shadow-2xl border border-white/10">
+                    <h1 className="text-2xl font-bold text-white mb-6 text-center">Stay Viral Master Tracker</h1>
+                    <form onSubmit={e => {
+                        e.preventDefault();
+                        if(pw === "stayviral2026") {
+                            localStorage.setItem("kajabi_auth", "true");
+                            setAuth(true);
+                        } else {
+                            setErr("Wrong password");
+                        }
+                    }}>
+                        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password"
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                        {err && <p className="text-red-400 mb-4 text-center">{err}</p>}
+                        <button className="w-full bg-purple-500 hover:bg-purple-600 text-white rounded-xl py-3 font-semibold transition-colors">Login</button>
+                    </form>
+                </div>
+            </div>
+        );
+
+        const ranges = [
+            {key: "today", label: "Today"},
+            {key: "yesterday", label: "Yesterday"},
+            {key: "2daysago", label: "2 Days Ago"},
+            {key: "7d", label: "7 Days"},
+            {key: "30d", label: "30 Days"},
+            {key: "12m", label: "12 Months"},
+            {key: "all", label: "All Time"},
+            {key: "custom", label: "Custom"}
+        ];
+
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-3 sm:p-6">
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                        <h1 className="text-xl sm:text-3xl font-bold text-white">Stay Viral Master Tracker</h1>
+                        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                            <button onClick={loadData} disabled={syncing}
+                                className="px-3 sm:px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-cyan-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-2">
+                                {syncing ? (
+                                    <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Syncing...</>
+                                ) : "Sync"}
+                            </button>
+                            {lastSync && <span className="text-slate-400 text-xs hidden sm:inline">Last: {lastSync}</span>}
+                            <button onClick={() => {localStorage.removeItem("kajabi_auth"); setAuth(false);}}
+                                className="text-slate-400 hover:text-white text-xs sm:text-sm">Logout</button>
+                        </div>
+                    </div>
+
+                    {loadError && (
+                        <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 mb-6 text-red-300">
+                            {loadError}
+                        </div>
+                    )}
+
+                    <div className="overflow-x-auto pb-2 mb-4 sm:mb-6 -mx-3 px-3 sm:mx-0 sm:px-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:flex-wrap">
+                            {ranges.map(r => (
+                                <button key={r.key} onClick={() => setRange(r.key)}
+                                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                                        range === r.key
+                                            ? "bg-purple-500 text-white shadow-lg shadow-purple-500/30"
+                                            : "bg-white/10 text-slate-300 hover:bg-white/20"
+                                    }`}>
+                                    {r.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {range === "custom" && (
+                        <div className="flex items-center gap-2 mb-4 sm:mb-6 flex-wrap">
+                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                                className="bg-white/10 border border-white/20 rounded-lg px-2 sm:px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 flex-1 sm:flex-none"/>
+                            <span className="text-slate-400 text-sm">to</span>
+                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                                className="bg-white/10 border border-white/20 rounded-lg px-2 sm:px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 flex-1 sm:flex-none"/>
+                        </div>
+                    )}
+
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Revenue</p>
+                            <p className="text-xl sm:text-3xl font-bold text-white">${totalRevenue.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Sales</p>
+                            <p className="text-xl sm:text-3xl font-bold text-white">{filteredSales.length}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Avg Order</p>
+                            <p className="text-xl sm:text-3xl font-bold text-white">${avgOrder}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Profit</p>
+                            <p className={`text-xl sm:text-3xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>${profit.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10 col-span-2 sm:col-span-1">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Profit (Incl. Agency)</p>
+                            <p className={`text-xl sm:text-3xl font-bold ${profitIncludingAgency >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>${profitIncludingAgency.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+                        </div>
+                    </div>
+
+                    {/* Ad Spend Inputs */}
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">Meta</p>
+                            <div className="flex items-center">
+                                <span className="text-white text-sm sm:text-xl mr-1">$</span>
+                                <input type="number" value={metaSpend} onChange={e => setMetaSpend(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-white text-sm sm:text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">TikTok</p>
+                            <div className="flex items-center">
+                                <span className="text-white text-sm sm:text-xl mr-1">$</span>
+                                <input type="number" value={tiktokSpend} onChange={e => setTiktokSpend(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-white text-sm sm:text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">Google</p>
+                            <div className="flex items-center">
+                                <span className="text-white text-sm sm:text-xl mr-1">$</span>
+                                <input type="number" value={googleSpend} onChange={e => setGoogleSpend(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-white text-sm sm:text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Expenses Breakdown */}
+                    <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10 mb-4 sm:mb-6">
+                        <p className="text-slate-400 text-xs sm:text-sm mb-2">Expenses Breakdown</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-4">
+                            <div>
+                                <p className="text-slate-500 text-xs">Ad Spend</p>
+                                <p className="text-sm sm:text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-xs">Affiliate 5%</p>
+                                <p className="text-sm sm:text-lg font-semibold text-orange-400">${Math.round(affiliateCommission).toLocaleString()}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-xs">Sales 17.5%</p>
+                                <p className="text-sm sm:text-lg font-semibold text-orange-400">${Math.round(salesTeamCommission).toLocaleString()}</p>
+                            </div>
+                            <div className="hidden sm:block">
+                                <p className="text-slate-500 text-xs">Total Comm.</p>
+                                <p className="text-lg font-semibold text-orange-400">${Math.round(totalCommissions).toLocaleString()}</p>
+                            </div>
+                            <div className="col-span-3 sm:col-span-1 border-t sm:border-t-0 border-white/10 pt-2 sm:pt-0 mt-2 sm:mt-0">
+                                <p className="text-slate-500 text-xs">Total Expenses</p>
+                                <p className="text-sm sm:text-lg font-semibold text-red-400">${Math.round(totalExpenses).toLocaleString()}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Agency Section - Now beneath expenses */}
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Agency Payout</p>
+                            <p className="text-lg sm:text-2xl font-bold text-yellow-400">Coming Soon</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Agency Profit</p>
+                            <p className="text-lg sm:text-2xl font-bold text-yellow-400">Coming Soon</p>
+                        </div>
+                    </div>
+
+                    {/* Revenue Breakdown */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Revenue by Day</h2>
+                            {chartData.length > 0 ? (
+                                <div className="space-y-1.5 sm:space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
+                                    {chartData.slice(-7).map((d, i) => (
+                                        <div key={i} className="flex justify-between items-center">
+                                            <span className="text-slate-300 text-xs sm:text-sm">{d.date.slice(5)}</span>
+                                            <div className="flex items-center gap-1 sm:gap-2">
+                                                <div className="h-1.5 sm:h-2 bg-purple-500 rounded" style={{width: `${Math.min(60, (d.revenue / Math.max(...chartData.map(x => x.revenue))) * 60)}px`}}></div>
+                                                <span className="text-green-400 font-medium text-xs sm:text-sm">${d.revenue.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No data</p>}
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                            <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Revenue by Offer</h2>
+                            {pieData.length > 0 ? (
+                                <div className="space-y-1.5 sm:space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
+                                    {pieData.sort((a,b) => b.value - a.value).map((d, i) => (
+                                        <div key={i} className="flex justify-between items-center gap-2">
+                                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                                                <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
+                                                <span className="text-slate-300 text-xs sm:text-sm truncate">{d.name}</span>
+                                            </div>
+                                            <span className="text-green-400 font-medium text-xs sm:text-sm flex-shrink-0">${d.value.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No data</p>}
+                        </div>
+                    </div>
+
+                    {/* Sales Table */}
+                    <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
+                        <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Sales ({filteredSales.length})</h2>
+                        {filteredSales.length === 0 ? (
+                            <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No sales found</p>
+                        ) : (
+                            <div className="overflow-x-auto max-h-64 sm:max-h-96 overflow-y-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+                                <table className="w-full min-w-[500px] sm:min-w-0">
+                                    <thead className="sticky top-0 bg-slate-800/95 backdrop-blur">
+                                        <tr className="border-b border-white/10">
+                                            <th className="text-left py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Date</th>
+                                            <th className="text-left py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Offer</th>
+                                            <th className="text-right py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Revenue</th>
+                                            <th className="text-right py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Aff.</th>
+                                            <th className="text-right py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Sales</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredSales.map(s => (
+                                            <tr key={s.id} className="border-b border-white/5 hover:bg-white/5">
+                                                <td className="py-2 sm:py-3 text-white text-xs sm:text-sm whitespace-nowrap">{s.date.slice(5)}</td>
+                                                <td className="py-2 sm:py-3 text-purple-300 text-xs sm:text-sm max-w-[120px] sm:max-w-none truncate">{s.offer}</td>
+                                                <td className="py-2 sm:py-3 text-right text-green-400 font-medium text-xs sm:text-sm">${s.revenue.toLocaleString()}</td>
+                                                <td className="py-2 sm:py-3 text-right text-orange-400 font-medium text-xs sm:text-sm">${Math.round(s.revenue * 0.05)}</td>
+                                                <td className="py-2 sm:py-3 text-right text-orange-400 font-medium text-xs sm:text-sm">
+                                                    {s.revenue > 999 ? `$${Math.round(s.revenue * 0.175)}` : '-'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-3 sm:mt-4 text-center text-slate-500 text-xs">
+                        <span className="hidden sm:inline">Auto-refreshes every 30 min | PST | </span>
+                        <span className="sm:hidden">PST | </span>
+                        {sales.length} transactions
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.render(<App/>, document.getElementById("root"));
+    </script>
+</body>
+</html>
