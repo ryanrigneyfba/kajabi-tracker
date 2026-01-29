@@ -1,317 +1,410 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-        <meta charset="UTF-8">
-        <title>Stay Viral Master Tracker</title>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-      <script src="https://cdn.tailwindcss.com"></script>
-  </head>
+<head>
+    <meta charset="UTF-8">
+    <title>Stay Viral Master Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.10.3/Recharts.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
 <body>
-      <div id="root"></div>div>
-      <script type="text/babel">
-            const {useState, useEffect, useMemo, useCallback} = React;
+    <div id="root"></div>
+    <script type="text/babel">
+    const {useState, useEffect, useMemo, useCallback} = React;
+    const {BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend} = Recharts;
 
-            const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTouSVybTAi-x7jwe7DQqWKrm_4XFXJjT49j6ORiree9g7Y8_hpXGzHo8Meu1jX1EtQCgrKf4O1nii4/pub?output=csv";
-            const REFRESH_INTERVAL = 30 * 60 * 1000;
+    // Data URL - loads from GitHub-hosted JSON
+    const DATA_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/transactions.json";
+    const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
-            function App() {
-                      const [auth, setAuth] = useState(false);
-                      const [pw, setPw] = useState("");
-                      const [err, setErr] = useState("");
-                      const [range, setRange] = useState("all");
-                      const [startDate, setStartDate] = useState("");
-                      const [endDate, setEndDate] = useState("");
-                      const [syncing, setSyncing] = useState(false);
-                      const [lastSync, setLastSync] = useState("Never");
-                      const [metaSpend, setMetaSpend] = useState(0);
-                      const [tiktokSpend, setTiktokSpend] = useState(0);
-                      const [googleSpend, setGoogleSpend] = useState(0);
-                      const [sales, setSales] = useState([]);
-                      const [loadError, setLoadError] = useState("");
-                      const [nextRefresh, setNextRefresh] = useState(null);
+    function App() {
+        const [auth, setAuth] = useState(false);
+        const [pw, setPw] = useState("");
+        const [err, setErr] = useState("");
+        const [range, setRange] = useState("all");
+        const [startDate, setStartDate] = useState("");
+        const [endDate, setEndDate] = useState("");
+        const [syncing, setSyncing] = useState(false);
+        const [lastSync, setLastSync] = useState(null);
+        const [metaSpend, setMetaSpend] = useState(0);
+        const [tiktokSpend, setTiktokSpend] = useState(0);
+        const [googleSpend, setGoogleSpend] = useState(0);
+        const [sales, setSales] = useState([]);
+        const [loadError, setLoadError] = useState("");
 
-                      const parseCSV = (text) => {
-                                    const lines = text.trim().split('\n');
-                                    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-                                    return lines.slice(1).map((line, idx) => {
-                                                      const values = line.match(/(".*?"|[^,]+)/g) || [];
-                                                      const row = {};
-                                                      headers.forEach((h, i) => {
-                                                                            row[h] = values[i] ? values[i].replace(/"/g, '').trim() : '';
-                                                      });
-                                                      return {
-                                                                            id: idx + 1,
-                                                                            date: row['Date'] ? row['Date'].split(' ')[0] : '',
-                                                                            offer: row['Offer'] || '',
-                                                                            revenue: parseFloat(row['Revenue']) || 0,
-                                                                            email: row['Customer Email'] || '',
-                                                                            source: row['Source'] || ''
-                                                      };
-                                    }).filter(s => s.date && s.revenue > 0);
-                      };
+        useEffect(() => {
+            if(localStorage.getItem("kajabi_auth") === "true") setAuth(true);
+        }, []);
 
-                      const fetchSales = useCallback(async () => {
-                                    setSyncing(true);
-                                    setLoadError("");
-                                    try {
-                                                      const response = await fetch(SHEET_URL);
-                                                      if (!response.ok) throw new Error("Failed to fetch");
-                                                      const text = await response.text();
-                                                      const parsed = parseCSV(text);
-                                                      setSales(parsed);
-                                                      setLastSync(new Date().toLocaleTimeString());
-                                                      setNextRefresh(new Date(Date.now() + REFRESH_INTERVAL));
-                                    } catch (e) {
-                                                      setLoadError("Could not load data. Check sheet sharing settings.");
-                                                      console.error(e);
-                                    }
-                                    setSyncing(false);
-                      }, []);
+        // Function to get PST date
+        const getPSTDate = useCallback((date = new Date()) => {
+            const pstOffset = -8 * 60; // PST is UTC-8
+            const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+            return new Date(utc + (pstOffset * 60000));
+        }, []);
 
-                      useEffect(() => {
-                                    if(localStorage.getItem("kajabi_auth") === "true") setAuth(true);
-                      }, []);
+        // Load data from JSON
+        const loadData = useCallback(async () => {
+            setSyncing(true);
+            setLoadError("");
+            try {
+                const response = await fetch(DATA_URL + "?t=" + Date.now());
+                if (!response.ok) throw new Error("Failed to fetch data");
+                const data = await response.json();
 
-                      useEffect(() => {
-                                    if (auth) {
-                                                      fetchSales();
-                                                      const interval = setInterval(fetchSales, REFRESH_INTERVAL);
-                                                      return () => clearInterval(interval);
-                                    }
-                      }, [auth, fetchSales]);
+                const formattedSales = data.map((row, idx) => ({
+                    id: idx + 1,
+                    date: row.date,
+                    datetime: row.datetime,
+                    offer: row.offer,
+                    revenue: parseFloat(row.revenue) || 0,
+                    email: row.email,
+                    source: row.source
+                }));
 
-                      const filteredSales = useMemo(() => {
-                                    const now = new Date();
-                                    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                                    return sales.filter(s => {
-                                                      const saleDate = new Date(s.date);
-                                                      const saleDateNorm = new Date(saleDate.getFullYear(), saleDate.getMonth(), saleDate.getDate());
-                                                      const diffDays = Math.floor((today - saleDateNorm) / (1000 * 60 * 60 * 24));
-                                                      if(range === "custom" && startDate && endDate) {
-                                                                            return saleDate >= new Date(startDate) && saleDate <= new Date(endDate);
-                                                      }
-                                                      switch(range) {
-                                                        case "today": return diffDays === 0;
-                                                        case "yesterday": return diffDays === 1;
-                                                        case "7d": return diffDays >= 0 && diffDays <= 7;
-                                                        case "30d": return diffDays >= 0 && diffDays <= 30;
-                                                        case "12m": return diffDays >= 0 && diffDays <= 365;
-                                                        default: return true;
-                                                      }
-                                    });
-                      }, [sales, range, startDate, endDate]);
-
-                      const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
-                      const avgOrder = filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : "0.00";
-                      const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
-
-                      // 5% affiliate commission on ALL sales
-                      const affiliateCommission = totalRevenue * 0.05;
-
-                      // 17.5% sales team commission on sales over $999
-                      const commissionableSales = filteredSales.filter(s => s.revenue > 999);
-                      const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
-
-                      // Total payouts and profit
-                      const totalCommissions = affiliateCommission + salesTeamCommission;
-                      const profit = totalRevenue - totalAdSpend - totalCommissions;
-
-                      if(!auth) return (
-                                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
-                                                      <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 w-full max-w-md shadow-2xl border border-white/10">
-                                                                            <h1 className="text-2xl font-bold text-white mb-6 text-center">Stay Viral Master Tracker</h1>
-                                                                            <form onSubmit={e => {
-                                                              e.preventDefault();
-                                                              if(pw === "stayviral2026") {
-                                                                                            localStorage.setItem("kajabi_auth", "true");
-                                                                                            setAuth(true);
-                                                              } else setErr("Wrong password");
-                                    }}>
-                                                                                                      <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password"
-                                                                                                                                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"/>
-                                                                              {err && <p className="text-red-400 mb-4 text-center">{err}</p>}
-                                                                                                      <button className="w-full bg-purple-500 hover:bg-purple-600 text-white rounded-xl py-3 font-semibold">Login</button>
-                                                                            </form>
-                                                      </div>
-                                    </div>
-                                );
-
-                      const ranges = [
-                        {key: "today", label: "Today"}, {key: "yesterday", label: "Yesterday"},
-                        {key: "7d", label: "7 Days"}, {key: "30d", label: "30 Days"},
-                        {key: "12m", label: "12 Months"}, {key: "all", label: "All Time"},
-                        {key: "custom", label: "Custom"}
-                                ];
-
-                      return (
-                                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
-                                                      <div className="max-w-6xl mx-auto">
-                                                                            <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                                                                                                      <h1 className="text-3xl font-bold text-white">Stay Viral Master Tracker</h1>
-                                                                                                      <div className="flex items-center gap-3">
-                                                                                                                                    <button onClick={fetchSales} disabled={syncing}
-                                                                                                                                                                      className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-cyan-700 text-white rounded-lg text-sm font-medium flex items-center gap-2">
-                                                                                                                                      {syncing ? (<><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Syncing...</>) : "Sync Now"}
-                                                                                                                                      </button>
-                                                                                                                                    <div className="text-right">
-                                                                                                                                                                      <span className="text-slate-400 text-xs block">Last: {lastSync}</span>
-                                                                                                                                      {nextRefresh && <span className="text-slate-500 text-xs block">Auto-refresh: 30 min</span>}
-                                                                                                                                      </div>
-                                                                                                                                    <button onClick={() => {localStorage.removeItem("kajabi_auth"); setAuth(false);}}
-                                                                                                                                                                      className="text-slate-400 hover:text-white text-sm">Logout</button>
-                                                                                                        </div>
-                                                                            </div>
-
-                                                        {loadError && <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 mb-6 text-red-300">{loadError}</div>}
-
-                                                                            <div className="flex items-center gap-2 flex-wrap mb-6">
-                                                                              {ranges.map(r => (
-                                                                  <button key={r.key} onClick={() => setRange(r.key)}
-                                                                                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium ${range === r.key ? "bg-purple-500 text-white shadow-lg shadow-purple-500/30" : "bg-white/10 text-slate-300 hover:bg-white/20"}`}>
-                                                                    {r.label}
-                                                                  </button>
-                                                              ))}
-                                                                              {range === "custom" && (
-                                                                  <div className="flex items-center gap-2 ml-2">
-                                                                                                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                                                                                                                                          className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm"/>
-                                                                                                    <span className="text-slate-400">to</span>
-                                                                                                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                                                                                                                                          className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm"/>
-                                                                  </div>
-                                                              )}
-                                                                            </div>
-
-                                                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-1">Revenue</p>
-                                                                                                                                    <p className="text-3xl font-bold text-white">${totalRevenue.toLocaleString()}</p>
-                                                                                                        </div>
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-1">Sales</p>
-                                                                                                                                    <p className="text-3xl font-bold text-white">{filteredSales.length}</p>
-                                                                                                        </div>
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-1">Avg Order</p>
-                                                                                                                                    <p className="text-3xl font-bold text-white">${avgOrder}</p>
-                                                                                                        </div>
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-1">Profit</p>
-                                                                                                                                    <p className={`text-3xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>${profit.toFixed(2)}</p>
-                                                                                                        </div>
-                                                                            </div>
-
-                                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-2">Meta Ad Spend</p>
-                                                                                                                                    <div className="flex items-center">
-                                                                                                                                                                      <span className="text-white text-xl mr-2">$</span>
-                                                                                                                                                                      <input type="number" value={metaSpend} onChange={e => setMetaSpend(e.target.value)}
-                                                                                                                                                                                                            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
-                                                                                                                                      </div>
-                                                                                                        </div>
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-2">TikTok Ad Spend</p>
-                                                                                                                                    <div className="flex items-center">
-                                                                                                                                                                      <span className="text-white text-xl mr-2">$</span>
-                                                                                                                                                                      <input type="number" value={tiktokSpend} onChange={e => setTiktokSpend(e.target.value)}
-                                                                                                                                                                                                            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
-                                                                                                                                      </div>
-                                                                                                        </div>
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-2">Google Ad Spend</p>
-                                                                                                                                    <div className="flex items-center">
-                                                                                                                                                                      <span className="text-white text-xl mr-2">$</span>
-                                                                                                                                                                      <input type="number" value={googleSpend} onChange={e => setGoogleSpend(e.target.value)}
-                                                                                                                                                                                                            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
-                                                                                                                                      </div>
-                                                                                                        </div>
-                                                                            </div>
-
-                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-1">Agency Payout</p>
-                                                                                                                                    <p className="text-2xl font-bold text-yellow-400">Under Construction</p>
-                                                                                                        </div>
-                                                                                                      <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                                                    <p className="text-slate-400 text-sm mb-1">Agency Estimated Profit</p>
-                                                                                                                                    <p className="text-2xl font-bold text-yellow-400">Under Construction</p>
-                                                                                                        </div>
-                                                                            </div>
-
-                                                                            <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10 mb-6">
-                                                                                                      <p className="text-slate-400 text-sm mb-3">Expenses Breakdown</p>
-                                                                                                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                                                                                                                    <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Ad Spend</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toFixed(2)}</p>
-                                                                                                                                      </div>
-                                                                                                                                    <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Affiliates (5%)</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${affiliateCommission.toFixed(2)}</p>
-                                                                                                                                                                      <p className="text-slate-600 text-xs">On all revenue</p>
-                                                                                                                                      </div>
-                                                                                                                                    <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Sales Team (17.5%)</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${salesTeamCommission.toFixed(2)}</p>
-                                                                                                                                                                      <p className="text-slate-600 text-xs">{commissionableSales.length} sales over $999</p>
-                                                                                                                                      </div>
-                                                                                                                                    <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Total Commissions</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${totalCommissions.toFixed(2)}</p>
-                                                                                                                                      </div>
-                                                                                                                                    <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Total Expenses</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-red-400">${(totalAdSpend + totalCommissions).toFixed(2)}</p>
-                                                                                                                                      </div>
-                                                                                                        </div>
-                                                                            </div>
-
-                                                                            <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
-                                                                                                      <h2 className="text-lg font-semibold text-white mb-4">Sales ({filteredSales.length})</h2>
-                                                                              {syncing && sales.length === 0 ? (
-                                                                  <p className="text-slate-400 text-center py-8">Loading sales data...</p>
-                                                              ) : filteredSales.length === 0 ? (
-                                                                  <p className="text-slate-400 text-center py-8">No sales found for this time period</p>
-                                                              ) : (
-                                                                  <div className="overflow-x-auto">
-                                                                                                    <table className="w-full">
-                                                                                                                                          <thead>
-                                                                                                                                                                                    <tr className="border-b border-white/10">
-                                                                                                                                                                                                                                  <th className="text-left py-3 text-slate-400 font-medium">Date</th>
-                                                                                                                                                                                                                                  <th className="text-left py-3 text-slate-400 font-medium">Offer</th>
-                                                                                                                                                                                                                                  <th className="text-right py-3 text-slate-400 font-medium">Revenue</th>
-                                                                                                                                                                                                                                  <th className="text-right py-3 text-slate-400 font-medium">Affiliate (5%)</th>
-                                                                                                                                                                                                                                  <th className="text-right py-3 text-slate-400 font-medium">Sales Team</th>
-                                                                                                                                                                                                                              </tr>
-                                                                                                                                            </thead>
-                                                                                                                                          <tbody>
-                                                                                                                                            {filteredSales.map(s => (
-                                                                                                                <tr key={s.id} className="border-b border-white/5 hover:bg-white/5">
-                                                                                                                                                                  <td className="py-3 text-white">{s.date}</td>
-                                                                                                                                                                  <td className="py-3 text-purple-300">{s.offer}</td>
-                                                                                                                                                                  <td className="py-3 text-right text-green-400 font-medium">${s.revenue}</td>
-                                                                                                                                                                  <td className="py-3 text-right text-orange-400">${(s.revenue * 0.05).toFixed(2)}</td>
-                                                                                                                                                                  <td className="py-3 text-right text-orange-400">
-                                                                                                                                                                                                                        {s.revenue > 999 ? `$${(s.revenue * 0.175).toFixed(2)}` : '-'}
-                                                                                                                                                                                                                    </td>
-                                                                                                                  </tr>
-                                                                                                            ))}
-                                                                                                                                            </tbody>
-                                                                                                      </table>
-                                                                  </div>
-                                                              )}
-                                                                            </div>
-                                                      </div>
-                                    </div>
-                                );
+                setSales(formattedSales);
+                setLastSync(new Date().toLocaleTimeString());
+            } catch (err) {
+                console.error("Load error:", err);
+                setLoadError("Could not load data. Please try again.");
+            } finally {
+                setSyncing(false);
             }
+        }, []);
 
-            ReactDOM.render(<App/>, document.getElementById("root"));
-      </script>
+        // Initial load and auto-refresh
+        useEffect(() => {
+            if (auth) {
+                loadData();
+                const interval = setInterval(loadData, REFRESH_INTERVAL);
+                return () => clearInterval(interval);
+            }
+        }, [auth, loadData]);
+
+        // Filter sales by date range (using PST)
+        const filteredSales = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+
+            return sales.filter(s => {
+                const saleDateParts = s.date.split('-');
+                const saleDate = new Date(
+                    parseInt(saleDateParts[0]),
+                    parseInt(saleDateParts[1]) - 1,
+                    parseInt(saleDateParts[2])
+                );
+                const diffTime = today.getTime() - saleDate.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+                if(range === "custom" && startDate && endDate) {
+                    const start = new Date(startDate);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59);
+                    return saleDate >= start && saleDate <= end;
+                }
+
+                switch(range) {
+                    case "today": return diffDays === 0;
+                    case "yesterday": return diffDays === 1;
+                    case "2daysago": return diffDays === 2;
+                    case "7d": return diffDays >= 0 && diffDays <= 7;
+                    case "30d": return diffDays >= 0 && diffDays <= 30;
+                    case "12m": return diffDays >= 0 && diffDays <= 365;
+                    case "all": default: return true;
+                }
+            });
+        }, [sales, range, startDate, endDate, getPSTDate]);
+
+        // Calculate metrics
+        const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
+        const avgOrder = filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : "0.00";
+        const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
+
+        // 5% affiliate commission on ALL sales
+        const affiliateCommission = totalRevenue * 0.05;
+
+        // 17.5% sales team commission on sales over $999
+        const commissionableSales = filteredSales.filter(s => s.revenue > 999);
+        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
+
+        // Total expenses and profit
+        const totalCommissions = affiliateCommission + salesTeamCommission;
+        const totalExpenses = totalAdSpend + totalCommissions;
+        const profit = totalRevenue - totalExpenses;
+
+        // Agency payouts placeholder (under construction)
+        const agencyPayout = 0;
+        const profitIncludingAgency = profit - agencyPayout;
+
+        // Chart data
+        const chartData = useMemo(() => {
+            const grouped = {};
+            filteredSales.forEach(s => {
+                grouped[s.date] = (grouped[s.date] || 0) + s.revenue;
+            });
+            return Object.entries(grouped).map(([date, revenue]) => ({date, revenue})).sort((a,b) => a.date.localeCompare(b.date));
+        }, [filteredSales]);
+
+        const pieData = useMemo(() => {
+            const grouped = {};
+            filteredSales.forEach(s => {
+                grouped[s.offer] = (grouped[s.offer] || 0) + s.revenue;
+            });
+            return Object.entries(grouped).map(([name, value]) => ({name, value}));
+        }, [filteredSales]);
+
+        const COLORS = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+
+        if(!auth) return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
+                <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 w-full max-w-md shadow-2xl border border-white/10">
+                    <h1 className="text-2xl font-bold text-white mb-6 text-center">Stay Viral Master Tracker</h1>
+                    <form onSubmit={e => {
+                        e.preventDefault();
+                        if(pw === "stayviral2026") {
+                            localStorage.setItem("kajabi_auth", "true");
+                            setAuth(true);
+                        } else {
+                            setErr("Wrong password");
+                        }
+                    }}>
+                        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password"
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                        {err && <p className="text-red-400 mb-4 text-center">{err}</p>}
+                        <button className="w-full bg-purple-500 hover:bg-purple-600 text-white rounded-xl py-3 font-semibold transition-colors">Login</button>
+                    </form>
+                </div>
+            </div>
+        );
+
+        const ranges = [
+            {key: "today", label: "Today"},
+            {key: "yesterday", label: "Yesterday"},
+            {key: "2daysago", label: "2 Days Ago"},
+            {key: "7d", label: "7 Days"},
+            {key: "30d", label: "30 Days"},
+            {key: "12m", label: "12 Months"},
+            {key: "all", label: "All Time"},
+            {key: "custom", label: "Custom"}
+        ];
+
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                        <h1 className="text-3xl font-bold text-white">Stay Viral Master Tracker</h1>
+                        <div className="flex items-center gap-3">
+                            <button onClick={loadData} disabled={syncing}
+                                className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-cyan-700 text-white rounded-lg text-sm font-medium transition-all flex items-center gap-2">
+                                {syncing ? (
+                                    <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Syncing...</>
+                                ) : "Sync Now"}
+                            </button>
+                            {lastSync && <span className="text-slate-400 text-xs">Last: {lastSync}</span>}
+                            <button onClick={() => {localStorage.removeItem("kajabi_auth"); setAuth(false);}}
+                                className="text-slate-400 hover:text-white text-sm">Logout</button>
+                        </div>
+                    </div>
+
+                    {loadError && (
+                        <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 mb-6 text-red-300">
+                            {loadError}
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-2 flex-wrap mb-6">
+                        {ranges.map(r => (
+                            <button key={r.key} onClick={() => setRange(r.key)}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                                    range === r.key
+                                        ? "bg-purple-500 text-white shadow-lg shadow-purple-500/30"
+                                        : "bg-white/10 text-slate-300 hover:bg-white/20"
+                                }`}>
+                                {r.label}
+                            </button>
+                        ))}
+                        {range === "custom" && (
+                            <div className="flex items-center gap-2 ml-2">
+                                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                                <span className="text-slate-400">to</span>
+                                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Revenue</p>
+                            <p className="text-3xl font-bold text-white">${totalRevenue.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Sales</p>
+                            <p className="text-3xl font-bold text-white">{filteredSales.length}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Avg Order</p>
+                            <p className="text-3xl font-bold text-white">${avgOrder}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Profit</p>
+                            <p className={`text-3xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>${profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Profit (Incl. Agency)</p>
+                            <p className={`text-3xl font-bold ${profitIncludingAgency >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>${profitIncludingAgency.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        </div>
+                    </div>
+
+                    {/* Ad Spend Inputs */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-2">Meta Ad Spend</p>
+                            <div className="flex items-center">
+                                <span className="text-white text-xl mr-2">$</span>
+                                <input type="number" value={metaSpend} onChange={e => setMetaSpend(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-2">TikTok Ad Spend</p>
+                            <div className="flex items-center">
+                                <span className="text-white text-xl mr-2">$</span>
+                                <input type="number" value={tiktokSpend} onChange={e => setTiktokSpend(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-2">Google Ad Spend</p>
+                            <div className="flex items-center">
+                                <span className="text-white text-xl mr-2">$</span>
+                                <input type="number" value={googleSpend} onChange={e => setGoogleSpend(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Expenses Breakdown */}
+                    <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10 mb-6">
+                        <p className="text-slate-400 text-sm mb-1">Expenses Breakdown</p>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-3">
+                            <div>
+                                <p className="text-slate-500 text-xs">Total Ad Spend</p>
+                                <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-xs">Affiliate (5% all sales)</p>
+                                <p className="text-lg font-semibold text-orange-400">${affiliateCommission.toFixed(2)}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-xs">Sales Team (17.5% &gt;$999)</p>
+                                <p className="text-lg font-semibold text-orange-400">${salesTeamCommission.toFixed(2)}</p>
+                                <p className="text-slate-600 text-xs">{commissionableSales.length} sales over $999</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-xs">Total Commissions</p>
+                                <p className="text-lg font-semibold text-orange-400">${totalCommissions.toFixed(2)}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-xs">Total Expenses</p>
+                                <p className="text-lg font-semibold text-red-400">${totalExpenses.toFixed(2)}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Agency Section - Now beneath expenses */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Agency Payout</p>
+                            <p className="text-2xl font-bold text-yellow-400">Under Construction</p>
+                            <p className="text-slate-500 text-xs mt-1">Coming soon...</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <p className="text-slate-400 text-sm mb-1">Agency Estimated Profit</p>
+                            <p className="text-2xl font-bold text-yellow-400">Under Construction</p>
+                            <p className="text-slate-500 text-xs mt-1">Coming soon...</p>
+                        </div>
+                    </div>
+
+                    {/* Charts */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <h2 className="text-lg font-semibold text-white mb-4">Revenue by Day</h2>
+                            {chartData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={200}>
+                                    <BarChart data={chartData}>
+                                        <XAxis dataKey="date" tick={{fill: '#94a3b8', fontSize: 12}} axisLine={{stroke: '#334155'}}/>
+                                        <YAxis tick={{fill: '#94a3b8', fontSize: 12}} axisLine={{stroke: '#334155'}}/>
+                                        <Tooltip contentStyle={{background: '#1e293b', border: 'none', borderRadius: '8px'}} labelStyle={{color: '#fff'}}/>
+                                        <Bar dataKey="revenue" fill="#8b5cf6" radius={[4, 4, 0, 0]}/>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            ) : <p className="text-slate-400 text-center py-8">No data for selected period</p>}
+                        </div>
+                        <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                            <h2 className="text-lg font-semibold text-white mb-4">Revenue by Offer</h2>
+                            {pieData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={200}>
+                                    <PieChart>
+                                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" label={({name, percent}) => `${(percent*100).toFixed(0)}%`}>
+                                            {pieData.map((entry, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
+                                        </Pie>
+                                        <Tooltip contentStyle={{background: '#1e293b', border: 'none', borderRadius: '8px'}}/>
+                                        <Legend wrapperStyle={{color: '#94a3b8'}}/>
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            ) : <p className="text-slate-400 text-center py-8">No data for selected period</p>}
+                        </div>
+                    </div>
+
+                    {/* Sales Table */}
+                    <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
+                        <h2 className="text-lg font-semibold text-white mb-4">Sales ({filteredSales.length})</h2>
+                        {filteredSales.length === 0 ? (
+                            <p className="text-slate-400 text-center py-8">No sales found for this time period</p>
+                        ) : (
+                            <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                                <table className="w-full">
+                                    <thead className="sticky top-0 bg-slate-800">
+                                        <tr className="border-b border-white/10">
+                                            <th className="text-left py-3 text-slate-400 font-medium">Date</th>
+                                            <th className="text-left py-3 text-slate-400 font-medium">Offer</th>
+                                            <th className="text-right py-3 text-slate-400 font-medium">Revenue</th>
+                                            <th className="text-right py-3 text-slate-400 font-medium">Affiliate (5%)</th>
+                                            <th className="text-right py-3 text-slate-400 font-medium">Sales Team</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredSales.map(s => (
+                                            <tr key={s.id} className="border-b border-white/5 hover:bg-white/5">
+                                                <td className="py-3 text-white">{s.date}</td>
+                                                <td className="py-3 text-purple-300">{s.offer}</td>
+                                                <td className="py-3 text-right text-green-400 font-medium">${s.revenue.toLocaleString()}</td>
+                                                <td className="py-3 text-right text-orange-400 font-medium">${(s.revenue * 0.05).toFixed(2)}</td>
+                                                <td className="py-3 text-right text-orange-400 font-medium">
+                                                    {s.revenue > 999 ? `$${(s.revenue * 0.175).toFixed(2)}` : '-'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-4 text-center text-slate-500 text-xs">
+                        Auto-refreshes every 30 minutes | PST Timezone | {sales.length} total transactions loaded
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.render(<App/>, document.getElementById("root"));
+    </script>
 </body>
-</html>html>
-</body></title>
-  </head>
+</html>
