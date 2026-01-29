@@ -13,8 +13,8 @@
       <script type="text/babel">
             const {useState, useEffect, useMemo, useCallback} = React;
 
-            const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U/gviz/tq?tqx=out:csv&gid=0";
-            const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
+            const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTouSVybTAi-x7jwe7DQqWKrm_4XFXJjT49j6ORiree9g7Y8_hpXGzHo8Meu1jX1EtQCgrKf4O1nii4/pub?output=csv";
+            const REFRESH_INTERVAL = 30 * 60 * 1000;
 
             function App() {
                       const [auth, setAuth] = useState(false);
@@ -106,9 +106,17 @@
                       const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
                       const avgOrder = filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : "0.00";
                       const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
+
+                      // 5% affiliate commission on ALL sales
+                      const affiliateCommission = totalRevenue * 0.05;
+
+                      // 17.5% sales team commission on sales over $999
                       const commissionableSales = filteredSales.filter(s => s.revenue > 999);
-                      const commissions = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
-                      const profit = totalRevenue - totalAdSpend - commissions;
+                      const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
+
+                      // Total payouts and profit
+                      const totalCommissions = affiliateCommission + salesTeamCommission;
+                      const profit = totalRevenue - totalAdSpend - totalCommissions;
 
                       if(!auth) return (
                                     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
@@ -149,7 +157,7 @@
                                                                                                                                       </button>
                                                                                                                                     <div className="text-right">
                                                                                                                                                                       <span className="text-slate-400 text-xs block">Last: {lastSync}</span>
-                                                                                                                                      {nextRefresh && <span className="text-slate-500 text-xs block">Auto-refresh: every 30 min</span>}
+                                                                                                                                      {nextRefresh && <span className="text-slate-500 text-xs block">Auto-refresh: 30 min</span>}
                                                                                                                                       </div>
                                                                                                                                     <button onClick={() => {localStorage.removeItem("kajabi_auth"); setAuth(false);}}
                                                                                                                                                                       className="text-slate-400 hover:text-white text-sm">Logout</button>
@@ -191,7 +199,7 @@
                                                                                                         </div>
                                                                                                       <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10">
                                                                                                                                     <p className="text-slate-400 text-sm mb-1">Profit</p>
-                                                                                                                                    <p className={`text-3xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>${profit.toLocaleString()}</p>
+                                                                                                                                    <p className={`text-3xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>${profit.toFixed(2)}</p>
                                                                                                         </div>
                                                                             </div>
 
@@ -234,20 +242,29 @@
                                                                             </div>
 
                                                                             <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/10 mb-6">
-                                                                                                      <p className="text-slate-400 text-sm mb-1">Expenses Breakdown</p>
-                                                                                                      <div className="grid grid-cols-3 gap-4 mt-3">
+                                                                                                      <p className="text-slate-400 text-sm mb-3">Expenses Breakdown</p>
+                                                                                                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                                                                                                                                     <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Total Ad Spend</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
+                                                                                                                                                                      <p className="text-slate-500 text-xs">Ad Spend</p>
+                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toFixed(2)}</p>
                                                                                                                                       </div>
                                                                                                                                     <div>
-                                                                                                                                                                      <p className="text-slate-500 text-xs">Commissions (17.5%)</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${commissions.toFixed(2)}</p>
+                                                                                                                                                                      <p className="text-slate-500 text-xs">Affiliates (5%)</p>
+                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${affiliateCommission.toFixed(2)}</p>
+                                                                                                                                                                      <p className="text-slate-600 text-xs">On all revenue</p>
+                                                                                                                                      </div>
+                                                                                                                                    <div>
+                                                                                                                                                                      <p className="text-slate-500 text-xs">Sales Team (17.5%)</p>
+                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${salesTeamCommission.toFixed(2)}</p>
                                                                                                                                                                       <p className="text-slate-600 text-xs">{commissionableSales.length} sales over $999</p>
                                                                                                                                       </div>
                                                                                                                                     <div>
+                                                                                                                                                                      <p className="text-slate-500 text-xs">Total Commissions</p>
+                                                                                                                                                                      <p className="text-lg font-semibold text-orange-400">${totalCommissions.toFixed(2)}</p>
+                                                                                                                                      </div>
+                                                                                                                                    <div>
                                                                                                                                                                       <p className="text-slate-500 text-xs">Total Expenses</p>
-                                                                                                                                                                      <p className="text-lg font-semibold text-red-400">${(totalAdSpend + commissions).toFixed(2)}</p>
+                                                                                                                                                                      <p className="text-lg font-semibold text-red-400">${(totalAdSpend + totalCommissions).toFixed(2)}</p>
                                                                                                                                       </div>
                                                                                                         </div>
                                                                             </div>
@@ -266,7 +283,8 @@
                                                                                                                                                                                                                                   <th className="text-left py-3 text-slate-400 font-medium">Date</th>
                                                                                                                                                                                                                                   <th className="text-left py-3 text-slate-400 font-medium">Offer</th>
                                                                                                                                                                                                                                   <th className="text-right py-3 text-slate-400 font-medium">Revenue</th>
-                                                                                                                                                                                                                                  <th className="text-right py-3 text-slate-400 font-medium">Commission</th>
+                                                                                                                                                                                                                                  <th className="text-right py-3 text-slate-400 font-medium">Affiliate (5%)</th>
+                                                                                                                                                                                                                                  <th className="text-right py-3 text-slate-400 font-medium">Sales Team</th>
                                                                                                                                                                                                                               </tr>
                                                                                                                                             </thead>
                                                                                                                                           <tbody>
@@ -275,7 +293,8 @@
                                                                                                                                                                   <td className="py-3 text-white">{s.date}</td>
                                                                                                                                                                   <td className="py-3 text-purple-300">{s.offer}</td>
                                                                                                                                                                   <td className="py-3 text-right text-green-400 font-medium">${s.revenue}</td>
-                                                                                                                                                                  <td className="py-3 text-right text-orange-400 font-medium">
+                                                                                                                                                                  <td className="py-3 text-right text-orange-400">${(s.revenue * 0.05).toFixed(2)}</td>
+                                                                                                                                                                  <td className="py-3 text-right text-orange-400">
                                                                                                                                                                                                                         {s.revenue > 999 ? `$${(s.revenue * 0.175).toFixed(2)}` : '-'}
                                                                                                                                                                                                                     </td>
                                                                                                                   </tr>
