@@ -16,8 +16,11 @@
     // Charts disabled for now - using simple display
     const ChartsAvailable = false;
 
-    // Data URL - loads from GitHub-hosted JSON
-    const DATA_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/transactions.json";
+    // Historical data (Jan 1-28, 2026) from JSON
+    const JSON_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/transactions.json";
+    // New sales from Google Sheet (Zapier adds here)
+    const SHEET_ID = "1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U";
+    const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
     const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
     function App() {
@@ -46,30 +49,97 @@
             return new Date(utc + (pstOffset * 60000));
         }, []);
 
-        // Load data from JSON
+        // Parse CSV helper
+        const parseCSV = (csv) => {
+            const lines = csv.split('\n').filter(line => line.trim());
+            if (lines.length < 2) return [];
+
+            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+            const rows = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+
+                for (let char of lines[i]) {
+                    if (char === '"') inQuotes = !inQuotes;
+                    else if (char === ',' && !inQuotes) {
+                        values.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                values.push(current.trim());
+
+                const row = {};
+                headers.forEach((h, idx) => row[h] = values[idx] || '');
+                rows.push(row);
+            }
+            return rows;
+        };
+
+        // Load data from JSON (historical) + Google Sheet (new sales)
         const loadData = useCallback(async () => {
             setSyncing(true);
             setLoadError("");
             try {
-                const response = await fetch(DATA_URL + "?t=" + Date.now());
-                if (!response.ok) throw new Error("Failed to fetch data");
-                const data = await response.json();
+                // Fetch both sources in parallel
+                const [jsonRes, sheetRes] = await Promise.all([
+                    fetch(JSON_URL + "?t=" + Date.now()),
+                    fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null)
+                ]);
 
-                const formattedSales = data.map((row, idx) => ({
-                    id: idx + 1,
-                    date: row.date,
-                    datetime: row.datetime,
-                    offer: row.offer,
-                    revenue: parseFloat(row.revenue) || 0,
-                    email: row.email,
-                    source: row.source
-                }));
+                // Historical data from JSON
+                let historicalSales = [];
+                if (jsonRes.ok) {
+                    const jsonData = await jsonRes.json();
+                    historicalSales = jsonData.map((row, idx) => ({
+                        id: idx + 1,
+                        date: row.date || '',
+                        datetime: row.datetime || '',
+                        offer: row.offer || '',
+                        revenue: parseFloat(row.revenue) || 0,
+                        email: row.email || '',
+                        source: row.source || ''
+                    })).filter(s => s.date && s.revenue > 0);
+                }
 
-                setSales(formattedSales);
+                // New sales from Google Sheet
+                let newSales = [];
+                if (sheetRes && sheetRes.ok) {
+                    const csv = await sheetRes.text();
+                    const sheetData = parseCSV(csv);
+                    newSales = sheetData.map((row, idx) => ({
+                        id: 10000 + idx,
+                        date: row.date || '',
+                        datetime: row.datetime || '',
+                        offer: row.offer || '',
+                        revenue: parseFloat(row.revenue) || 0,
+                        email: row.email || '',
+                        source: row.source || ''
+                    })).filter(s => s.date && s.revenue > 0);
+                }
+
+                // Combine and deduplicate by email+datetime+revenue
+                const allSales = [...historicalSales, ...newSales];
+                const seen = new Set();
+                const uniqueSales = allSales.filter(s => {
+                    const key = `${s.email}-${s.datetime}-${s.revenue}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                // Sort by date descending (newest first in data, table will show properly)
+                uniqueSales.sort((a, b) => b.date.localeCompare(a.date));
+
+                setSales(uniqueSales);
                 setLastSync(new Date().toLocaleTimeString());
             } catch (err) {
                 console.error("Load error:", err);
-                setLoadError("Could not load data. Please try again.");
+                setLoadError("Could not load data. Check your connection.");
             } finally {
                 setSyncing(false);
             }
