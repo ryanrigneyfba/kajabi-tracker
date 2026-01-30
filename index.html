@@ -230,12 +230,28 @@
             const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
 
             const filtered = tiktokExpenses.filter(e => {
-                const dateParts = e.date.split('-');
-                const expenseDate = new Date(
-                    parseInt(dateParts[0]),
-                    parseInt(dateParts[1]) - 1,
-                    parseInt(dateParts[2])
-                );
+                // Parse date - handle both YYYY-MM-DD and M/D/YYYY formats
+                let expenseDate;
+                if (e.date.includes('-')) {
+                    const dateParts = e.date.split('-');
+                    expenseDate = new Date(
+                        parseInt(dateParts[0]),
+                        parseInt(dateParts[1]) - 1,
+                        parseInt(dateParts[2])
+                    );
+                } else if (e.date.includes('/')) {
+                    const dateParts = e.date.split('/');
+                    expenseDate = new Date(
+                        parseInt(dateParts[2]),
+                        parseInt(dateParts[0]) - 1,
+                        parseInt(dateParts[1])
+                    );
+                } else {
+                    return false; // Skip if date format not recognized
+                }
+
+                if (isNaN(expenseDate.getTime())) return false;
+
                 const diffTime = today.getTime() - expenseDate.getTime();
                 const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
