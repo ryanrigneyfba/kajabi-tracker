@@ -38,7 +38,7 @@
         const [syncing, setSyncing] = useState(false);
         const [lastSync, setLastSync] = useState(null);
         const [metaSpend, setMetaSpend] = useState(0);
-        const [tiktokSpend, setTiktokSpend] = useState(0);
+        const [tiktokExpenses, setTiktokExpenses] = useState([]);
         const [googleSpend, setGoogleSpend] = useState(0);
         const [sales, setSales] = useState([]);
         const [bookedCalls, setBookedCalls] = useState([]);
@@ -160,17 +160,16 @@
                 }
                 setBookedCalls(calls);
 
-                // Parse TikTok Expenses data and calculate total spend
+                // Parse TikTok Expenses data (store with dates for filtering)
                 if (tiktokExpensesRes && tiktokExpensesRes.ok) {
                     const tiktokCsv = await tiktokExpensesRes.text();
                     const tiktokData = parseCSV(tiktokCsv);
-                    let totalTiktokSpend = 0;
-                    tiktokData.forEach(row => {
-                        // Amount column contains the expense amount
-                        const amount = parseFloat(row.amount) || 0;
-                        totalTiktokSpend += amount;
-                    });
-                    setTiktokSpend(totalTiktokSpend);
+                    const expenses = tiktokData.map((row, idx) => ({
+                        id: idx,
+                        date: row.date || '',
+                        amount: parseFloat(row.amount) || 0
+                    })).filter(e => e.date && e.amount > 0);
+                    setTiktokExpenses(expenses);
                 }
 
                 setLastSync(new Date().toLocaleTimeString());
@@ -224,6 +223,42 @@
                 }
             });
         }, [sales, range, startDate, endDate, getPSTDate]);
+
+        // Filter TikTok expenses by date range (same logic as sales)
+        const tiktokSpend = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+
+            const filtered = tiktokExpenses.filter(e => {
+                const dateParts = e.date.split('-');
+                const expenseDate = new Date(
+                    parseInt(dateParts[0]),
+                    parseInt(dateParts[1]) - 1,
+                    parseInt(dateParts[2])
+                );
+                const diffTime = today.getTime() - expenseDate.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+                if(range === "custom" && startDate && endDate) {
+                    const start = new Date(startDate);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59);
+                    return expenseDate >= start && expenseDate <= end;
+                }
+
+                switch(range) {
+                    case "today": return diffDays === 0;
+                    case "yesterday": return diffDays === 1;
+                    case "2daysago": return diffDays === 2;
+                    case "7d": return diffDays >= 0 && diffDays <= 7;
+                    case "30d": return diffDays >= 0 && diffDays <= 30;
+                    case "12m": return diffDays >= 0 && diffDays <= 365;
+                    case "all": default: return true;
+                }
+            });
+
+            return filtered.reduce((sum, e) => sum + e.amount, 0);
+        }, [tiktokExpenses, range, startDate, endDate, getPSTDate]);
 
         // Calculate metrics
         const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
@@ -447,8 +482,9 @@
                             <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">TikTok <span className="text-green-400 text-xs">(auto)</span></p>
                             <div className="flex items-center">
                                 <span className="text-white text-sm sm:text-xl mr-1">$</span>
-                                <input type="number" value={tiktokSpend} onChange={e => setTiktokSpend(e.target.value)}
-                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-white text-sm sm:text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                                <div className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-green-400 text-sm sm:text-xl">
+                                    {tiktokSpend.toLocaleString()}
+                                </div>
                             </div>
                         </div>
                         <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
