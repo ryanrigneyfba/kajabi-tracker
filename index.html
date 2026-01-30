@@ -22,6 +22,8 @@
     // New sales from Google Sheet (Zapier adds here)
     const SHEET_ID = "1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U";
     const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+    // TikTok Expenses tab (gid=513847686) - auto-populated by Zapier from TikTok invoices
+    const TIKTOK_EXPENSES_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=513847686`;
     // Booked Calls tab (gid=691644011)
     const BOOKED_CALLS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=691644011`;
     const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
@@ -84,16 +86,17 @@
             return rows;
         };
 
-        // Load data from JSON (historical) + Google Sheet (new sales) + Booked Calls
+        // Load data from JSON (historical) + Google Sheet (new sales) + Booked Calls + TikTok Expenses
         const loadData = useCallback(async () => {
             setSyncing(true);
             setLoadError("");
             try {
                 // Fetch all sources in parallel
-                const [jsonRes, sheetRes, bookedRes] = await Promise.all([
+                const [jsonRes, sheetRes, bookedRes, tiktokExpensesRes] = await Promise.all([
                     fetch(JSON_URL + "?t=" + Date.now()),
                     fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null),
-                    fetch(BOOKED_CALLS_URL + "&t=" + Date.now()).catch(() => null)
+                    fetch(BOOKED_CALLS_URL + "&t=" + Date.now()).catch(() => null),
+                    fetch(TIKTOK_EXPENSES_URL + "&t=" + Date.now()).catch(() => null)
                 ]);
 
                 // Historical data from JSON
@@ -156,6 +159,19 @@
                     })).filter(c => c.date);
                 }
                 setBookedCalls(calls);
+
+                // Parse TikTok Expenses data and calculate total spend
+                if (tiktokExpensesRes && tiktokExpensesRes.ok) {
+                    const tiktokCsv = await tiktokExpensesRes.text();
+                    const tiktokData = parseCSV(tiktokCsv);
+                    let totalTiktokSpend = 0;
+                    tiktokData.forEach(row => {
+                        // Amount column contains the expense amount
+                        const amount = parseFloat(row.amount) || 0;
+                        totalTiktokSpend += amount;
+                    });
+                    setTiktokSpend(totalTiktokSpend);
+                }
 
                 setLastSync(new Date().toLocaleTimeString());
             } catch (err) {
@@ -428,7 +444,7 @@
                             </div>
                         </div>
                         <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">TikTok</p>
+                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">TikTok <span className="text-green-400 text-xs">(auto)</span></p>
                             <div className="flex items-center">
                                 <span className="text-white text-sm sm:text-xl mr-1">$</span>
                                 <input type="number" value={tiktokSpend} onChange={e => setTiktokSpend(e.target.value)}
