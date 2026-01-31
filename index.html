@@ -208,7 +208,7 @@
         const [auth, setAuth] = useState(false);
         const [pw, setPw] = useState("");
         const [err, setErr] = useState("");
-        const [range, setRange] = useState("all");
+        const [range, setRange] = useState("today");
         const [startDate, setStartDate] = useState("");
         const [endDate, setEndDate] = useState("");
         const [syncing, setSyncing] = useState(false);
@@ -332,20 +332,38 @@
 
                 if (ga4SessionsRes && ga4SessionsRes.ok) {
                     const ga4Csv = await ga4SessionsRes.text();
-                    const ga4Data = parseCSV(ga4Csv);
-                    const sessions = ga4Data
-                        .filter(row => row.date && row.sessions)
-                        .map(row => {
-                            const dateStr = String(row.date);
-                            const year = dateStr.substring(0, 4);
-                            const month = dateStr.substring(4, 6);
-                            const day = dateStr.substring(6, 8);
-                            return {
-                                date: `${year}-${month}-${day}`,
-                                sessions: parseInt(row.sessions) || 0
-                            };
-                        })
-                        .filter(s => s.sessions > 0);
+                    const lines = ga4Csv.split('\n');
+                    // Find the "Results Breakdown" section and skip to data rows
+                    let dataStartIdx = -1;
+                    for (let i = 0; i < lines.length; i++) {
+                        if (lines[i].includes('Results Breakdown') || lines[i].toLowerCase().includes('"date"')) {
+                            dataStartIdx = i + 1;
+                            // Skip the header row after Results Breakdown
+                            if (lines[i].includes('Results Breakdown')) dataStartIdx = i + 2;
+                            break;
+                        }
+                    }
+                    const sessions = [];
+                    if (dataStartIdx > 0) {
+                        for (let i = dataStartIdx; i < lines.length; i++) {
+                            const line = lines[i].replace(/"/g, '').trim();
+                            if (!line) continue;
+                            const parts = line.split(',');
+                            if (parts.length >= 2) {
+                                const dateStr = String(parts[0]).trim();
+                                const sessCount = parseInt(parts[1]) || 0;
+                                if (dateStr.length === 8 && sessCount > 0) {
+                                    const year = dateStr.substring(0, 4);
+                                    const month = dateStr.substring(4, 6);
+                                    const day = dateStr.substring(6, 8);
+                                    sessions.push({
+                                        date: `${year}-${month}-${day}`,
+                                        sessions: sessCount
+                                    });
+                                }
+                            }
+                        }
+                    }
                     setGa4Sessions(sessions);
                 }
 
@@ -501,6 +519,46 @@
         }, [ga4Sessions, range, startDate, endDate, getPSTDate]);
 
         const totalSessions = filteredGa4Sessions.reduce((sum, s) => sum + s.sessions, 0);
+
+        // Calculate previous period sessions for comparison
+        const previousPeriodSessions = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+
+            // Determine the period length and calculate previous period range
+            let periodDays = 1;
+            switch(range) {
+                case "today": case "yesterday": case "2daysago": periodDays = 1; break;
+                case "7d": periodDays = 7; break;
+                case "30d": periodDays = 30; break;
+                case "12m": periodDays = 365; break;
+                default: periodDays = 30;
+            }
+
+            // Get the offset for current period start
+            let currentOffset = 0;
+            switch(range) {
+                case "today": currentOffset = 0; break;
+                case "yesterday": currentOffset = 1; break;
+                case "2daysago": currentOffset = 2; break;
+                default: currentOffset = 0;
+            }
+
+            // Previous period is the same length, immediately before
+            const prevPeriodStart = currentOffset + periodDays;
+            const prevPeriodEnd = currentOffset + (periodDays * 2) - 1;
+
+            return ga4Sessions.filter(s => {
+                const parts = s.date.split('-');
+                const sessionDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                const diffDays = Math.floor((today.getTime() - sessionDate.getTime()) / (1000 * 60 * 60 * 24));
+                return diffDays >= prevPeriodStart && diffDays <= prevPeriodEnd;
+            }).reduce((sum, s) => sum + s.sessions, 0);
+        }, [ga4Sessions, range, getPSTDate]);
+
+        const sessionsChangePercent = previousPeriodSessions > 0
+            ? ((totalSessions - previousPeriodSessions) / previousPeriodSessions * 100).toFixed(1)
+            : null;
 
         // Calculations
         const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
@@ -687,7 +745,7 @@
                                     </p>
                                 </div>
                                 <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
-                                    <div className="flex items-center gap-2 mb-3">
+                                    <div className="flex items-center gap-2 mb-2">
                                         <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center text-violet-400">
                                             <Icons.sessions />
                                         </div>
@@ -696,6 +754,14 @@
                                     <p className="text-3xl font-bold text-violet-400">
                                         <AnimatedNumber value={totalSessions} />
                                     </p>
+                                    <div className="flex items-center justify-between mt-2">
+                                        {sessionsChangePercent !== null && (
+                                            <span className={`text-xs font-medium ${parseFloat(sessionsChangePercent) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {parseFloat(sessionsChangePercent) >= 0 ? '↑' : '↓'} {Math.abs(parseFloat(sessionsChangePercent))}% vs prev
+                                            </span>
+                                        )}
+                                        <span className="text-slate-600 text-xs">24hr delay</span>
+                                    </div>
                                 </div>
                             </>
                         )}
