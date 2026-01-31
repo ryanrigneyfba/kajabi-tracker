@@ -125,6 +125,7 @@
     const {useState, useEffect, useMemo, useCallback} = React;
 
     // Data URLs
+    const DATA_START_DATE = "2026-01-28"; // Only show data from this date onwards
     const JSON_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/transactions.json";
     const SHEET_ID = "1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U";
     const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
@@ -275,7 +276,7 @@
                         id: idx + 1, date: row.date || '', datetime: row.datetime || '',
                         offer: row.offer || '', revenue: parseFloat(row.revenue) || 0,
                         email: row.email || '', source: row.source || ''
-                    })).filter(s => s.date && s.revenue > 0);
+                    })).filter(s => s.date && s.revenue > 0 && s.date >= DATA_START_DATE);
                 }
 
                 let newSales = [];
@@ -286,7 +287,7 @@
                         id: 10000 + idx, date: row.date || '', datetime: row.date || '',
                         offer: row.offer || '', revenue: parseFloat(row.revenue) || 0,
                         email: row['customer email'] || '', source: row.source || ''
-                    })).filter(s => s.date && s.revenue > 0);
+                    })).filter(s => s.date && s.revenue > 0 && s.date >= DATA_START_DATE);
                 }
 
                 const allSales = [...historicalSales, ...newSales];
@@ -306,7 +307,11 @@
                     const calls = callsData.map((row, idx) => ({
                         id: idx, date: row.date || '', name: row.name || '',
                         email: row.email || '', eventType: row['event type'] || ''
-                    })).filter(c => c.date);
+                    })).filter(c => {
+                        if (!c.date) return false;
+                        const dateStr = c.date.includes('T') ? c.date.split('T')[0] : c.date;
+                        return dateStr >= DATA_START_DATE;
+                    });
                     setBookedCalls(calls);
                 }
 
@@ -315,7 +320,16 @@
                     const tiktokData = parseCSV(tiktokCsv);
                     const expenses = tiktokData.map((row, idx) => ({
                         id: idx, date: row.date || '', amount: parseFloat(row.amount) || 0
-                    })).filter(e => e.date && e.amount > 0);
+                    })).filter(e => {
+                        if (!e.date || e.amount <= 0) return false;
+                        // Handle MM/DD/YYYY format
+                        let dateStr = e.date;
+                        if (e.date.includes('/')) {
+                            const parts = e.date.split('/');
+                            dateStr = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+                        }
+                        return dateStr >= DATA_START_DATE;
+                    });
                     setTiktokExpenses(expenses);
                 }
 
@@ -334,6 +348,7 @@
                     const ga4Csv = await ga4SessionsRes.text();
                     const lines = ga4Csv.split('\n');
                     const sessions = [];
+                    const minValidDate = 20260128; // Only include data from Jan 28, 2026 onwards
                     // Parse all lines looking for date pattern (8 digits starting with 202)
                     for (let i = 0; i < lines.length; i++) {
                         const line = lines[i].replace(/"/g, '').trim();
@@ -342,8 +357,8 @@
                         if (parts.length >= 2) {
                             const dateStr = String(parts[0]).trim();
                             const sessCount = parseInt(parts[1]) || 0;
-                            // Check if it looks like a date (8 digits starting with 202)
-                            if (/^202\d{5}$/.test(dateStr) && sessCount > 0) {
+                            // Check if it looks like a date (8 digits starting with 202) and is on/after Jan 28
+                            if (/^202\d{5}$/.test(dateStr) && sessCount > 0 && parseInt(dateStr) >= minValidDate) {
                                 const year = dateStr.substring(0, 4);
                                 const month = dateStr.substring(4, 6);
                                 const day = dateStr.substring(6, 8);
