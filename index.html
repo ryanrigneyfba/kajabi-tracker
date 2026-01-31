@@ -176,11 +176,13 @@
                 }
 
                 // Parse Fixed Costs data from Cashflow Mastersheet
+                // Exclude Affiliate, Sales Team, and Ads since those are tracked separately
                 if (fixedCostsRes && fixedCostsRes.ok) {
                     const fixedCsv = await fixedCostsRes.text();
                     const fixedData = parseCSV(fixedCsv);
+                    const excludeCategories = ['TOTAL EXPENSES', 'AFFILIATE PAYOUTS (PROGRAM SALES)', 'SALES TEAM PAYOUTS', 'ADS SPEND'];
                     const costs = fixedData
-                        .filter(row => row.category && row.category.toUpperCase() !== 'TOTAL EXPENSES')
+                        .filter(row => row.category && !excludeCategories.includes(row.category.toUpperCase()))
                         .map(row => ({
                             category: row.category || '',
                             amount: parseFloat(row['total ($)']) || 0
