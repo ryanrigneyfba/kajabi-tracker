@@ -8,28 +8,194 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+
+        /* Grid background pattern */
+        .grid-bg {
+            background-image:
+                linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        /* Card glow effect */
+        .card-glow {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.7) 100%);
+            border: 1px solid rgba(6, 182, 212, 0.15);
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .card-glow:hover {
+            border-color: rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 60px rgba(6, 182, 212, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        /* Skeleton loading animation */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+        }
+
+        /* Fade in animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        .fade-in-delay-1 { animation-delay: 0.1s; opacity: 0; }
+        .fade-in-delay-2 { animation-delay: 0.2s; opacity: 0; }
+        .fade-in-delay-3 { animation-delay: 0.3s; opacity: 0; }
+        .fade-in-delay-4 { animation-delay: 0.4s; opacity: 0; }
+        .fade-in-delay-5 { animation-delay: 0.5s; opacity: 0; }
+
+        /* Pulse animation for sync */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .pulse { animation: pulse 2s infinite; }
+
+        /* Number counter animation */
+        @keyframes countUp {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .count-up {
+            animation: countUp 0.6s ease-out forwards;
+        }
+
+        /* Gradient text */
+        .gradient-text {
+            background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Button styles */
+        .btn-primary {
+            background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%);
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 40px rgba(6, 182, 212, 0.3);
+        }
+
+        /* Range button active state */
+        .range-active {
+            background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%);
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+        }
+
+        /* Input focus effect */
+        input:focus {
+            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+        ::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, 0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(6, 182, 212, 0.5); }
+
+        /* Table row hover */
+        .table-row:hover { background: rgba(6, 182, 212, 0.05); }
+    </style>
 </head>
-<body>
+<body class="bg-black">
     <div id="root"></div>
     <script type="text/babel">
     const {useState, useEffect, useMemo, useCallback} = React;
 
-    // Charts disabled for now - using simple display
-    const ChartsAvailable = false;
-
-    // Historical data (Jan 1-28, 2026) from JSON
+    // Data URLs
     const JSON_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/transactions.json";
-    // New sales from Google Sheet (Zapier adds here)
     const SHEET_ID = "1Bs7p1scYs5ZZXio-qdy88BEPEjMeU5Lc7eXiq2ePT5U";
     const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
-    // TikTok Expenses tab (gid=513847686) - auto-populated by Zapier from TikTok invoices
     const TIKTOK_EXPENSES_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=513847686`;
-    // Booked Calls tab (gid=691644011)
     const BOOKED_CALLS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=691644011`;
-    // Fixed Costs from Cashflow Mastersheet (gid=266077976)
     const FIXED_COSTS_SHEET_ID = "1qb2IIRUTta5ywuTqLLX-2GmLCmtzf7-1cyt0jhStd8U";
     const FIXED_COSTS_URL = `https://docs.google.com/spreadsheets/d/${FIXED_COSTS_SHEET_ID}/gviz/tq?tqx=out:csv&gid=266077976`;
-    const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
+    const REFRESH_INTERVAL = 30 * 60 * 1000;
+
+    // Skeleton Component
+    const Skeleton = ({className}) => (
+        <div className={`skeleton ${className}`}></div>
+    );
+
+    // Animated Number Component
+    const AnimatedNumber = ({value, prefix = "", suffix = "", decimals = 0}) => {
+        const [displayed, setDisplayed] = useState(0);
+
+        useEffect(() => {
+            const duration = 800;
+            const steps = 30;
+            const increment = value / steps;
+            let current = 0;
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= value) {
+                    setDisplayed(value);
+                    clearInterval(timer);
+                } else {
+                    setDisplayed(current);
+                }
+            }, duration / steps);
+            return () => clearInterval(timer);
+        }, [value]);
+
+        return <span className="count-up">{prefix}{displayed.toLocaleString(undefined, {maximumFractionDigits: decimals})}{suffix}</span>;
+    };
+
+    // Icon Components
+    const Icons = {
+        revenue: () => (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        ),
+        sales: () => (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+        ),
+        calls: () => (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+            </svg>
+        ),
+        chart: () => (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+        ),
+        profit: () => (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+        ),
+        sync: () => (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+        )
+    };
 
     function App() {
         const [auth, setAuth] = useState(false);
@@ -39,6 +205,7 @@
         const [startDate, setStartDate] = useState("");
         const [endDate, setEndDate] = useState("");
         const [syncing, setSyncing] = useState(false);
+        const [initialLoad, setInitialLoad] = useState(true);
         const [lastSync, setLastSync] = useState(null);
         const [metaSpend, setMetaSpend] = useState(0);
         const [tiktokExpenses, setTiktokExpenses] = useState([]);
@@ -52,37 +219,27 @@
             if(localStorage.getItem("kajabi_auth") === "true") setAuth(true);
         }, []);
 
-        // Function to get PST date
         const getPSTDate = useCallback((date = new Date()) => {
-            const pstOffset = -8 * 60; // PST is UTC-8
+            const pstOffset = -8 * 60;
             const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
             return new Date(utc + (pstOffset * 60000));
         }, []);
 
-        // Parse CSV helper
         const parseCSV = (csv) => {
             const lines = csv.split('\n').filter(line => line.trim());
             if (lines.length < 2) return [];
-
             const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
             const rows = [];
-
             for (let i = 1; i < lines.length; i++) {
                 const values = [];
                 let current = '';
                 let inQuotes = false;
-
                 for (let char of lines[i]) {
                     if (char === '"') inQuotes = !inQuotes;
-                    else if (char === ',' && !inQuotes) {
-                        values.push(current.trim());
-                        current = '';
-                    } else {
-                        current += char;
-                    }
+                    else if (char === ',' && !inQuotes) { values.push(current.trim()); current = ''; }
+                    else { current += char; }
                 }
                 values.push(current.trim());
-
                 const row = {};
                 headers.forEach((h, idx) => row[h] = values[idx] || '');
                 rows.push(row);
@@ -90,12 +247,10 @@
             return rows;
         };
 
-        // Load data from JSON (historical) + Google Sheet (new sales) + Booked Calls + TikTok Expenses + Fixed Costs
         const loadData = useCallback(async () => {
             setSyncing(true);
             setLoadError("");
             try {
-                // Fetch all sources in parallel
                 const [jsonRes, sheetRes, bookedRes, tiktokExpensesRes, fixedCostsRes] = await Promise.all([
                     fetch(JSON_URL + "?t=" + Date.now()),
                     fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null),
@@ -104,38 +259,27 @@
                     fetch(FIXED_COSTS_URL + "&t=" + Date.now()).catch(() => null)
                 ]);
 
-                // Historical data from JSON
                 let historicalSales = [];
                 if (jsonRes.ok) {
                     const jsonData = await jsonRes.json();
                     historicalSales = jsonData.map((row, idx) => ({
-                        id: idx + 1,
-                        date: row.date || '',
-                        datetime: row.datetime || '',
-                        offer: row.offer || '',
-                        revenue: parseFloat(row.revenue) || 0,
-                        email: row.email || '',
-                        source: row.source || ''
+                        id: idx + 1, date: row.date || '', datetime: row.datetime || '',
+                        offer: row.offer || '', revenue: parseFloat(row.revenue) || 0,
+                        email: row.email || '', source: row.source || ''
                     })).filter(s => s.date && s.revenue > 0);
                 }
 
-                // New sales from Google Sheet
                 let newSales = [];
                 if (sheetRes && sheetRes.ok) {
                     const csv = await sheetRes.text();
                     const sheetData = parseCSV(csv);
                     newSales = sheetData.map((row, idx) => ({
-                        id: 10000 + idx,
-                        date: row.date || '',
-                        datetime: row.date || '',
-                        offer: row.offer || '',
-                        revenue: parseFloat(row.revenue) || 0,
-                        email: row['customer email'] || '',
-                        source: row.source || ''
+                        id: 10000 + idx, date: row.date || '', datetime: row.date || '',
+                        offer: row.offer || '', revenue: parseFloat(row.revenue) || 0,
+                        email: row['customer email'] || '', source: row.source || ''
                     })).filter(s => s.date && s.revenue > 0);
                 }
 
-                // Combine and deduplicate by email+datetime+revenue
                 const allSales = [...historicalSales, ...newSales];
                 const seen = new Set();
                 const uniqueSales = allSales.filter(s => {
@@ -144,54 +288,41 @@
                     seen.add(key);
                     return true;
                 });
-
                 uniqueSales.sort((a, b) => b.date.localeCompare(a.date));
                 setSales(uniqueSales);
 
-                // Parse Booked Calls data
-                let calls = [];
                 if (bookedRes && bookedRes.ok) {
                     const callsCsv = await bookedRes.text();
                     const callsData = parseCSV(callsCsv);
-                    calls = callsData.map((row, idx) => ({
-                        id: idx,
-                        date: row.date || '',
-                        name: row.name || '',
-                        email: row.email || '',
-                        eventType: row['event type'] || ''
+                    const calls = callsData.map((row, idx) => ({
+                        id: idx, date: row.date || '', name: row.name || '',
+                        email: row.email || '', eventType: row['event type'] || ''
                     })).filter(c => c.date);
+                    setBookedCalls(calls);
                 }
-                setBookedCalls(calls);
 
-                // Parse TikTok Expenses data (store with dates for filtering)
                 if (tiktokExpensesRes && tiktokExpensesRes.ok) {
                     const tiktokCsv = await tiktokExpensesRes.text();
                     const tiktokData = parseCSV(tiktokCsv);
                     const expenses = tiktokData.map((row, idx) => ({
-                        id: idx,
-                        date: row.date || '',
-                        amount: parseFloat(row.amount) || 0
+                        id: idx, date: row.date || '', amount: parseFloat(row.amount) || 0
                     })).filter(e => e.date && e.amount > 0);
                     setTiktokExpenses(expenses);
                 }
 
-                // Parse Fixed Costs data from Cashflow Mastersheet
-                // Exclude Affiliate, Sales Team, and Ads since those are tracked separately
                 if (fixedCostsRes && fixedCostsRes.ok) {
                     const fixedCsv = await fixedCostsRes.text();
                     const fixedData = parseCSV(fixedCsv);
                     const excludeCategories = ['TOTAL EXPENSES', 'AFFILIATE PAYOUTS (PROGRAM SALES)', 'SALES TEAM PAYOUTS', 'ADS SPEND'];
                     const costs = fixedData
                         .filter(row => row.category && !excludeCategories.includes(row.category.toUpperCase()))
-                        .map(row => ({
-                            category: row.category || '',
-                            amount: parseFloat(row['total ($)']) || 0
-                        }))
+                        .map(row => ({ category: row.category || '', amount: parseFloat(row['total ($)']) || 0 }))
                         .filter(c => c.category);
                     setFixedCosts(costs);
                 }
 
                 setLastSync(new Date().toLocaleTimeString());
+                setInitialLoad(false);
             } catch (err) {
                 console.error("Load error:", err);
                 setLoadError("Could not load data. Check your connection.");
@@ -200,7 +331,6 @@
             }
         }, []);
 
-        // Initial load and auto-refresh
         useEffect(() => {
             if (auth) {
                 loadData();
@@ -209,63 +339,39 @@
             }
         }, [auth, loadData]);
 
-        // Calculate total monthly fixed costs and daily average
-        const totalMonthlyFixedCosts = useMemo(() => {
-            return fixedCosts.reduce((sum, c) => sum + c.amount, 0);
-        }, [fixedCosts]);
+        const totalMonthlyFixedCosts = useMemo(() => fixedCosts.reduce((sum, c) => sum + c.amount, 0), [fixedCosts]);
+        const dailyFixedCost = useMemo(() => totalMonthlyFixedCosts / 30, [totalMonthlyFixedCosts]);
 
-        const dailyFixedCost = useMemo(() => {
-            return totalMonthlyFixedCosts / 30;
-        }, [totalMonthlyFixedCosts]);
-
-        // Calculate number of days in current range for fixed costs
         const daysInRange = useMemo(() => {
             if (range === "custom" && startDate && endDate) {
                 const start = new Date(startDate);
                 const end = new Date(endDate);
-                const diffTime = Math.abs(end.getTime() - start.getTime());
-                return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                return Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
             }
-
             switch(range) {
-                case "today": return 1;
-                case "yesterday": return 1;
-                case "2daysago": return 1;
+                case "today": case "yesterday": case "2daysago": return 1;
                 case "7d": return 7;
                 case "30d": return 30;
                 case "12m": return 365;
-                case "all":
-                default: return 30; // Default to 30 days for "all time"
+                default: return 30;
             }
         }, [range, startDate, endDate]);
 
-        // Fixed costs for the current range
-        const fixedCostsForRange = useMemo(() => {
-            return dailyFixedCost * daysInRange;
-        }, [dailyFixedCost, daysInRange]);
+        const fixedCostsForRange = useMemo(() => dailyFixedCost * daysInRange, [dailyFixedCost, daysInRange]);
 
-        // Filter sales by date range (using PST)
         const filteredSales = useMemo(() => {
             const pstNow = getPSTDate();
             const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
-
             return sales.filter(s => {
-                const saleDateParts = s.date.split('-');
-                const saleDate = new Date(
-                    parseInt(saleDateParts[0]),
-                    parseInt(saleDateParts[1]) - 1,
-                    parseInt(saleDateParts[2])
-                );
-                const diffTime = today.getTime() - saleDate.getTime();
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
+                const parts = s.date.split('-');
+                const saleDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                const diffDays = Math.floor((today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
                 if(range === "custom" && startDate && endDate) {
                     const start = new Date(startDate);
                     const end = new Date(endDate);
                     end.setHours(23, 59, 59);
                     return saleDate >= start && saleDate <= end;
                 }
-
                 switch(range) {
                     case "today": return diffDays === 0;
                     case "yesterday": return diffDays === 1;
@@ -273,49 +379,31 @@
                     case "7d": return diffDays >= 0 && diffDays <= 7;
                     case "30d": return diffDays >= 0 && diffDays <= 30;
                     case "12m": return diffDays >= 0 && diffDays <= 365;
-                    case "all": default: return true;
+                    default: return true;
                 }
             });
         }, [sales, range, startDate, endDate, getPSTDate]);
 
-        // Filter TikTok expenses by date range (same logic as sales)
         const tiktokSpend = useMemo(() => {
             const pstNow = getPSTDate();
             const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
-
             const filtered = tiktokExpenses.filter(e => {
-                // Parse date - handle both YYYY-MM-DD and M/D/YYYY formats
                 let expenseDate;
                 if (e.date.includes('-')) {
-                    const dateParts = e.date.split('-');
-                    expenseDate = new Date(
-                        parseInt(dateParts[0]),
-                        parseInt(dateParts[1]) - 1,
-                        parseInt(dateParts[2])
-                    );
+                    const parts = e.date.split('-');
+                    expenseDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
                 } else if (e.date.includes('/')) {
-                    const dateParts = e.date.split('/');
-                    expenseDate = new Date(
-                        parseInt(dateParts[2]),
-                        parseInt(dateParts[0]) - 1,
-                        parseInt(dateParts[1])
-                    );
-                } else {
-                    return false; // Skip if date format not recognized
-                }
-
+                    const parts = e.date.split('/');
+                    expenseDate = new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+                } else return false;
                 if (isNaN(expenseDate.getTime())) return false;
-
-                const diffTime = today.getTime() - expenseDate.getTime();
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
+                const diffDays = Math.floor((today.getTime() - expenseDate.getTime()) / (1000 * 60 * 60 * 24));
                 if(range === "custom" && startDate && endDate) {
                     const start = new Date(startDate);
                     const end = new Date(endDate);
                     end.setHours(23, 59, 59);
                     return expenseDate >= start && expenseDate <= end;
                 }
-
                 switch(range) {
                     case "today": return diffDays === 0;
                     case "yesterday": return diffDays === 1;
@@ -323,74 +411,30 @@
                     case "7d": return diffDays >= 0 && diffDays <= 7;
                     case "30d": return diffDays >= 0 && diffDays <= 30;
                     case "12m": return diffDays >= 0 && diffDays <= 365;
-                    case "all": default: return true;
+                    default: return true;
                 }
             });
-
             return filtered.reduce((sum, e) => sum + e.amount, 0);
         }, [tiktokExpenses, range, startDate, endDate, getPSTDate]);
 
-        // Calculate metrics
-        const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
-        const avgOrder = filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : "0.00";
-        const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
-
-        // 5% affiliate commission on ALL sales
-        const affiliateCommission = totalRevenue * 0.05;
-
-        // 17.5% sales team commission on sales over $999
-        const commissionableSales = filteredSales.filter(s => s.revenue > 999);
-        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
-
-        // Total expenses and profit (now includes fixed costs)
-        const totalCommissions = affiliateCommission + salesTeamCommission;
-        const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange;
-        const profit = totalRevenue - totalExpenses;
-
-        // Agency payouts placeholder (under construction)
-        const agencyPayout = 0;
-        const profitIncludingAgency = profit - agencyPayout;
-
-        // Chart data
-        const chartData = useMemo(() => {
-            const grouped = {};
-            filteredSales.forEach(s => {
-                grouped[s.date] = (grouped[s.date] || 0) + s.revenue;
-            });
-            return Object.entries(grouped).map(([date, revenue]) => ({date, revenue})).sort((a,b) => a.date.localeCompare(b.date));
-        }, [filteredSales]);
-
-        // Filter booked calls by date range
         const filteredBookedCalls = useMemo(() => {
             const pstNow = getPSTDate();
             const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
-
             return bookedCalls.filter(c => {
-                // Parse date - could be ISO format or MM/DD/YYYY
                 let callDate;
-                if (c.date.includes('T')) {
-                    // ISO format from Calendly
-                    callDate = new Date(c.date);
-                } else if (c.date.includes('-')) {
+                if (c.date.includes('T')) callDate = new Date(c.date);
+                else if (c.date.includes('-')) {
                     const parts = c.date.split('-');
                     callDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-                } else {
-                    // Try parsing as-is
-                    callDate = new Date(c.date);
-                }
-
+                } else callDate = new Date(c.date);
                 if (isNaN(callDate.getTime())) return false;
-
-                const diffTime = today.getTime() - callDate.getTime();
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
+                const diffDays = Math.floor((today.getTime() - callDate.getTime()) / (1000 * 60 * 60 * 24));
                 if(range === "custom" && startDate && endDate) {
                     const start = new Date(startDate);
                     const end = new Date(endDate);
                     end.setHours(23, 59, 59);
                     return callDate >= start && callDate <= end;
                 }
-
                 switch(range) {
                     case "today": return diffDays === 0;
                     case "yesterday": return diffDays === 1;
@@ -398,22 +442,33 @@
                     case "7d": return diffDays >= 0 && diffDays <= 7;
                     case "30d": return diffDays >= 0 && diffDays <= 30;
                     case "12m": return diffDays >= 0 && diffDays <= 365;
-                    case "all": default: return true;
+                    default: return true;
                 }
             });
         }, [bookedCalls, range, startDate, endDate, getPSTDate]);
 
-        // Booked calls per date chart data
+        // Calculations
+        const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
+        const avgOrder = filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0;
+        const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
+        const affiliateCommission = totalRevenue * 0.05;
+        const commissionableSales = filteredSales.filter(s => s.revenue > 999);
+        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
+        const totalCommissions = affiliateCommission + salesTeamCommission;
+        const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange;
+        const profit = totalRevenue - totalExpenses;
+        const profitIncludingAgency = profit;
+
+        const chartData = useMemo(() => {
+            const grouped = {};
+            filteredSales.forEach(s => { grouped[s.date] = (grouped[s.date] || 0) + s.revenue; });
+            return Object.entries(grouped).map(([date, revenue]) => ({date, revenue})).sort((a,b) => a.date.localeCompare(b.date));
+        }, [filteredSales]);
+
         const bookedCallsChartData = useMemo(() => {
             const grouped = {};
             filteredBookedCalls.forEach(c => {
-                // Extract just the date part
-                let dateStr;
-                if (c.date.includes('T')) {
-                    dateStr = c.date.split('T')[0];
-                } else {
-                    dateStr = c.date;
-                }
+                const dateStr = c.date.includes('T') ? c.date.split('T')[0] : c.date;
                 grouped[dateStr] = (grouped[dateStr] || 0) + 1;
             });
             return Object.entries(grouped).map(([date, count]) => ({date, count})).sort((a,b) => a.date.localeCompare(b.date));
@@ -421,31 +476,30 @@
 
         const pieData = useMemo(() => {
             const grouped = {};
-            filteredSales.forEach(s => {
-                grouped[s.offer] = (grouped[s.offer] || 0) + s.revenue;
-            });
+            filteredSales.forEach(s => { grouped[s.offer] = (grouped[s.offer] || 0) + s.revenue; });
             return Object.entries(grouped).map(([name, value]) => ({name, value}));
         }, [filteredSales]);
 
-        const COLORS = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+        const COLORS = ['#06B6D4', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
 
+        // Login Screen
         if(!auth) return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
-                <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 w-full max-w-md shadow-2xl border border-white/10">
-                    <h1 className="text-2xl font-bold text-white mb-6 text-center">Stay Viral Master Tracker</h1>
+            <div className="min-h-screen bg-black grid-bg flex items-center justify-center p-6">
+                <div className="fade-in card-glow rounded-3xl p-10 w-full max-w-md">
+                    <div className="flex items-center justify-center gap-3 mb-8">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-lg">SV</div>
+                        <h1 className="text-2xl font-bold text-white">Stay Viral</h1>
+                    </div>
+                    <p className="text-slate-400 text-center mb-8">Master Tracker Dashboard</p>
                     <form onSubmit={e => {
                         e.preventDefault();
-                        if(pw === "stayviral2026") {
-                            localStorage.setItem("kajabi_auth", "true");
-                            setAuth(true);
-                        } else {
-                            setErr("Wrong password");
-                        }
+                        if(pw === "stayviral2026") { localStorage.setItem("kajabi_auth", "true"); setAuth(true); }
+                        else { setErr("Wrong password"); }
                     }}>
-                        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password"
-                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"/>
-                        {err && <p className="text-red-400 mb-4 text-center">{err}</p>}
-                        <button className="w-full bg-purple-500 hover:bg-purple-600 text-white rounded-xl py-3 font-semibold transition-colors">Login</button>
+                        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Enter password"
+                            className="w-full bg-black/50 border border-white/10 rounded-xl px-5 py-4 text-white placeholder-slate-500 mb-4 focus:outline-none focus:border-cyan-500/50 transition-all"/>
+                        {err && <p className="text-red-400 mb-4 text-center text-sm">{err}</p>}
+                        <button className="w-full btn-primary text-white rounded-xl py-4 font-semibold">Access Dashboard</button>
                     </form>
                 </div>
             </div>
@@ -462,260 +516,310 @@
             {key: "custom", label: "Custom"}
         ];
 
+        // Main Dashboard
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-3 sm:p-6">
-                <div className="max-w-6xl mx-auto">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
-                        <h1 className="text-xl sm:text-3xl font-bold text-white">Stay Viral Master Tracker</h1>
-                        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
+            <div className="min-h-screen bg-black grid-bg p-4 sm:p-8">
+                <div className="max-w-7xl mx-auto">
+                    {/* Header */}
+                    <div className="fade-in flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-lg">SV</div>
+                            <div>
+                                <h1 className="text-2xl font-bold text-white">Master Tracker</h1>
+                                <p className="text-slate-500 text-sm">Real-time performance analytics</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
                             <button onClick={loadData} disabled={syncing}
-                                className="px-3 sm:px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-cyan-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-2">
-                                {syncing ? (
-                                    <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Syncing...</>
-                                ) : "Sync"}
+                                className="btn-primary px-5 py-2.5 rounded-xl text-sm font-medium text-white flex items-center gap-2 disabled:opacity-50">
+                                <span className={syncing ? "animate-spin" : ""}><Icons.sync /></span>
+                                {syncing ? "Syncing..." : "Sync"}
                             </button>
-                            {lastSync && <span className="text-slate-400 text-xs hidden sm:inline">Last: {lastSync}</span>}
+                            {lastSync && <span className="text-slate-500 text-xs hidden sm:block">Last: {lastSync}</span>}
                             <button onClick={() => {localStorage.removeItem("kajabi_auth"); setAuth(false);}}
-                                className="text-slate-400 hover:text-white text-xs sm:text-sm">Logout</button>
+                                className="text-slate-500 hover:text-white text-sm transition-colors">Logout</button>
                         </div>
                     </div>
 
                     {loadError && (
-                        <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 mb-6 text-red-300">
+                        <div className="fade-in bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6 text-red-400 text-sm">
                             {loadError}
                         </div>
                     )}
 
-                    <div className="overflow-x-auto pb-2 mb-4 sm:mb-6 -mx-3 px-3 sm:mx-0 sm:px-0">
-                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:flex-wrap">
+                    {/* Date Range Selector */}
+                    <div className="fade-in fade-in-delay-1 mb-8">
+                        <div className="flex items-center gap-2 overflow-x-auto pb-2">
                             {ranges.map(r => (
                                 <button key={r.key} onClick={() => setRange(r.key)}
-                                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-                                        range === r.key
-                                            ? "bg-purple-500 text-white shadow-lg shadow-purple-500/30"
-                                            : "bg-white/10 text-slate-300 hover:bg-white/20"
+                                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
+                                        range === r.key ? "range-active text-white" : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
                                     }`}>
                                     {r.label}
                                 </button>
                             ))}
                         </div>
+                        {range === "custom" && (
+                            <div className="flex items-center gap-3 mt-4 flex-wrap">
+                                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-cyan-500/50 transition-all"/>
+                                <span className="text-slate-500">to</span>
+                                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-cyan-500/50 transition-all"/>
+                            </div>
+                        )}
                     </div>
-                    {range === "custom" && (
-                        <div className="flex items-center gap-2 mb-4 sm:mb-6 flex-wrap">
-                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                                className="bg-white/10 border border-white/20 rounded-lg px-2 sm:px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 flex-1 sm:flex-none"/>
-                            <span className="text-slate-400 text-sm">to</span>
-                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                                className="bg-white/10 border border-white/20 rounded-lg px-2 sm:px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 flex-1 sm:flex-none"/>
-                        </div>
-                    )}
 
-                    {/* KPI Cards */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-4 sm:mb-6">
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Revenue</p>
-                            <p className="text-xl sm:text-3xl font-bold text-white">${totalRevenue.toLocaleString()}</p>
+                    {/* Main KPI Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        {initialLoad ? (
+                            <>
+                                {[...Array(4)].map((_, i) => (
+                                    <div key={i} className="card-glow rounded-2xl p-6">
+                                        <Skeleton className="h-4 w-20 mb-3" />
+                                        <Skeleton className="h-10 w-32" />
+                                    </div>
+                                ))}
+                            </>
+                        ) : (
+                            <>
+                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                                            <Icons.revenue />
+                                        </div>
+                                        <span className="text-slate-400 text-sm">Revenue</span>
+                                    </div>
+                                    <p className="text-3xl font-bold text-white">
+                                        <AnimatedNumber value={totalRevenue} prefix="$" />
+                                    </p>
+                                </div>
+                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400">
+                                            <Icons.sales />
+                                        </div>
+                                        <span className="text-slate-400 text-sm">Sales</span>
+                                    </div>
+                                    <p className="text-3xl font-bold text-white">
+                                        <AnimatedNumber value={filteredSales.length} />
+                                    </p>
+                                </div>
+                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                            <Icons.calls />
+                                        </div>
+                                        <span className="text-slate-400 text-sm">Booked Calls</span>
+                                    </div>
+                                    <p className="text-3xl font-bold text-cyan-400">
+                                        <AnimatedNumber value={filteredBookedCalls.length} />
+                                    </p>
+                                </div>
+                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className={`w-8 h-8 rounded-lg ${profit >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'} flex items-center justify-center ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            <Icons.profit />
+                                        </div>
+                                        <span className="text-slate-400 text-sm">Profit</span>
+                                    </div>
+                                    <p className={`text-3xl font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <AnimatedNumber value={profit} prefix="$" />
+                                    </p>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Secondary Stats */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Avg Order</p>
+                            <p className="text-xl font-bold text-white">${avgOrder.toFixed(2)}</p>
                         </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Sales</p>
-                            <p className="text-xl sm:text-3xl font-bold text-white">{filteredSales.length}</p>
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Total Ad Spend</p>
+                            <p className="text-xl font-bold text-orange-400">${totalAdSpend.toLocaleString()}</p>
                         </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Booked Calls</p>
-                            <p className="text-xl sm:text-3xl font-bold text-cyan-400">{filteredBookedCalls.length}</p>
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Total Expenses</p>
+                            <p className="text-xl font-bold text-red-400">${Math.round(totalExpenses).toLocaleString()}</p>
                         </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Avg Order</p>
-                            <p className="text-xl sm:text-3xl font-bold text-white">${avgOrder}</p>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Profit</p>
-                            <p className={`text-xl sm:text-3xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>${profit.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10 col-span-2 sm:col-span-1">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Profit (Incl. Agency)</p>
-                            <p className={`text-xl sm:text-3xl font-bold ${profitIncludingAgency >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>${profitIncludingAgency.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Fixed Costs ({daysInRange}d)</p>
+                            <p className="text-xl font-bold text-purple-400">${Math.round(fixedCostsForRange).toLocaleString()}</p>
                         </div>
                     </div>
 
                     {/* Ad Spend Inputs */}
-                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">Meta</p>
-                            <div className="flex items-center">
-                                <span className="text-white text-sm sm:text-xl mr-1">$</span>
-                                <input type="number" value={metaSpend} onChange={e => setMetaSpend(e.target.value)}
-                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-white text-sm sm:text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
-                            </div>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">TikTok <span className="text-green-400 text-xs">(auto)</span></p>
-                            <div className="flex items-center">
-                                <span className="text-white text-sm sm:text-xl mr-1">$</span>
-                                <div className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-green-400 text-sm sm:text-xl">
-                                    {tiktokSpend.toLocaleString()}
+                    <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-6 mb-6">
+                        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500"></span>
+                            Ad Spend
+                        </h3>
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <label className="text-slate-500 text-xs uppercase tracking-wider mb-2 block">Meta</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                                    <input type="number" value={metaSpend} onChange={e => setMetaSpend(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 transition-all"/>
                                 </div>
                             </div>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-2 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1 sm:mb-2">Google</p>
-                            <div className="flex items-center">
-                                <span className="text-white text-sm sm:text-xl mr-1">$</span>
-                                <input type="number" value={googleSpend} onChange={e => setGoogleSpend(e.target.value)}
-                                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-white text-sm sm:text-xl focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            <div>
+                                <label className="text-slate-500 text-xs uppercase tracking-wider mb-2 block">TikTok <span className="text-emerald-400">(auto)</span></label>
+                                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 text-emerald-400 font-medium">
+                                    ${tiktokSpend.toLocaleString()}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-slate-500 text-xs uppercase tracking-wider mb-2 block">Google</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                                    <input type="number" value={googleSpend} onChange={e => setGoogleSpend(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 transition-all"/>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Fixed Costs Breakdown - NEW SECTION */}
+                    {/* Fixed Costs Breakdown */}
                     {fixedCosts.length > 0 && (
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10 mb-4 sm:mb-6">
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-1">
-                                <p className="text-slate-400 text-xs sm:text-sm">Fixed Costs <span className="text-green-400 text-xs">(auto - daily avg)</span></p>
+                        <div className="fade-in fade-in-delay-4 card-glow rounded-2xl p-6 mb-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-white font-semibold flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-400 to-pink-500"></span>
+                                    Fixed Costs <span className="text-emerald-400 text-xs font-normal">(auto)</span>
+                                </h3>
                                 <p className="text-slate-500 text-xs">Monthly: ${totalMonthlyFixedCosts.toLocaleString(undefined, {maximumFractionDigits: 0})} | Daily: ${dailyFixedCost.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
                             </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-2 sm:gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                                 {fixedCosts.map((cost, idx) => (
-                                    <div key={idx} className="min-w-0">
-                                        <p className="text-slate-500 text-xs mb-1 truncate" title={cost.category}>
-                                            {cost.category.replace(' Payouts', '').replace('(Program Sales)', '').replace(' Spend', '')}
-                                        </p>
-                                        <p className="text-sm font-semibold text-purple-400">
-                                            ${(cost.amount / 30).toLocaleString(undefined, {maximumFractionDigits: 0})}
-                                            <span className="text-slate-600 text-xs">/day</span>
-                                        </p>
+                                    <div key={idx} className="bg-white/5 rounded-xl p-4">
+                                        <p className="text-slate-500 text-xs mb-1 truncate">{cost.category.replace(' Payouts', '').replace('(Program Sales)', '').replace(' Spend', '')}</p>
+                                        <p className="text-lg font-semibold text-purple-400">${(cost.amount / 30).toLocaleString(undefined, {maximumFractionDigits: 0})}<span className="text-slate-600 text-xs">/day</span></p>
                                     </div>
                                 ))}
-                                <div className="min-w-0 border-l border-white/10 pl-2 sm:pl-3">
-                                    <p className="text-slate-500 text-xs mb-1">Range Total</p>
-                                    <p className="text-sm font-semibold text-red-400">${fixedCostsForRange.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
-                                </div>
                             </div>
                         </div>
                     )}
 
                     {/* Expenses Breakdown */}
-                    <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10 mb-4 sm:mb-6">
-                        <p className="text-slate-400 text-xs sm:text-sm mb-3">Expenses Breakdown</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 sm:gap-4">
-                            <div className="min-w-0">
+                    <div className="fade-in fade-in-delay-4 card-glow rounded-2xl p-6 mb-6">
+                        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-400 to-red-500"></span>
+                            Expenses Breakdown
+                        </h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                            <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Ad Spend</p>
-                                <p className="text-base sm:text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
+                                <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
                             </div>
-                            <div className="min-w-0">
+                            <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Affiliate (5%)</p>
-                                <p className="text-base sm:text-lg font-semibold text-orange-400">${Math.round(affiliateCommission).toLocaleString()}</p>
+                                <p className="text-lg font-semibold text-orange-400">${Math.round(affiliateCommission).toLocaleString()}</p>
                             </div>
-                            <div className="min-w-0">
+                            <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Sales Team (17.5%)</p>
-                                <p className="text-base sm:text-lg font-semibold text-orange-400">${Math.round(salesTeamCommission).toLocaleString()}</p>
+                                <p className="text-lg font-semibold text-orange-400">${Math.round(salesTeamCommission).toLocaleString()}</p>
                             </div>
-                            <div className="min-w-0">
+                            <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Fixed Costs</p>
-                                <p className="text-base sm:text-lg font-semibold text-orange-400">${Math.round(fixedCostsForRange).toLocaleString()}</p>
+                                <p className="text-lg font-semibold text-orange-400">${Math.round(fixedCostsForRange).toLocaleString()}</p>
                             </div>
-                            <div className="min-w-0">
-                                <p className="text-slate-500 text-xs mb-1">Total Commission</p>
-                                <p className="text-base sm:text-lg font-semibold text-orange-400">${Math.round(totalCommissions).toLocaleString()}</p>
-                            </div>
-                            <div className="min-w-0 col-span-2 sm:col-span-1 border-t sm:border-t-0 border-white/10 pt-3 sm:pt-0 mt-1 sm:mt-0">
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Total Expenses</p>
-                                <p className="text-base sm:text-lg font-semibold text-red-400">${Math.round(totalExpenses).toLocaleString()}</p>
+                                <p className="text-lg font-semibold text-red-400">${Math.round(totalExpenses).toLocaleString()}</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Agency Section - Now beneath expenses */}
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-6">
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Agency Payout</p>
-                            <p className="text-lg sm:text-2xl font-bold text-yellow-400">Coming Soon</p>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <p className="text-slate-400 text-xs sm:text-sm mb-1">Agency Profit</p>
-                            <p className="text-lg sm:text-2xl font-bold text-yellow-400">Coming Soon</p>
-                        </div>
-                    </div>
-
-                    {/* Revenue & Calls Breakdown */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Revenue by Day</h2>
+                    {/* Charts Row */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                        <div className="fade-in fade-in-delay-5 card-glow rounded-2xl p-6">
+                            <h3 className="text-white font-semibold mb-4">Revenue by Day</h3>
                             {chartData.length > 0 ? (
-                                <div className="space-y-1.5 sm:space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
+                                <div className="space-y-3 max-h-48 overflow-y-auto">
                                     {chartData.slice(-7).map((d, i) => (
                                         <div key={i} className="flex justify-between items-center">
-                                            <span className="text-slate-300 text-xs sm:text-sm">{d.date.slice(5)}</span>
-                                            <div className="flex items-center gap-1 sm:gap-2">
-                                                <div className="h-1.5 sm:h-2 bg-purple-500 rounded" style={{width: `${Math.min(60, (d.revenue / Math.max(...chartData.map(x => x.revenue))) * 60)}px`}}></div>
-                                                <span className="text-green-400 font-medium text-xs sm:text-sm">${d.revenue.toLocaleString()}</span>
+                                            <span className="text-slate-400 text-sm">{d.date.slice(5)}</span>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-24 h-2 bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-500"
+                                                        style={{width: `${(d.revenue / Math.max(...chartData.map(x => x.revenue))) * 100}%`}}></div>
+                                                </div>
+                                                <span className="text-emerald-400 font-medium text-sm w-20 text-right">${d.revenue.toLocaleString()}</span>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-                            ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No data</p>}
+                            ) : <p className="text-slate-500 text-center py-8">No data</p>}
                         </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Booked Calls by Day</h2>
+                        <div className="fade-in fade-in-delay-5 card-glow rounded-2xl p-6">
+                            <h3 className="text-white font-semibold mb-4">Booked Calls by Day</h3>
                             {bookedCallsChartData.length > 0 ? (
-                                <div className="space-y-1.5 sm:space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
+                                <div className="space-y-3 max-h-48 overflow-y-auto">
                                     {bookedCallsChartData.slice(-7).map((d, i) => (
                                         <div key={i} className="flex justify-between items-center">
-                                            <span className="text-slate-300 text-xs sm:text-sm">{d.date.slice(5)}</span>
-                                            <div className="flex items-center gap-1 sm:gap-2">
-                                                <div className="h-1.5 sm:h-2 bg-cyan-500 rounded" style={{width: `${Math.min(60, (d.count / Math.max(...bookedCallsChartData.map(x => x.count), 1)) * 60)}px`}}></div>
-                                                <span className="text-cyan-400 font-medium text-xs sm:text-sm">{d.count}</span>
+                                            <span className="text-slate-400 text-sm">{d.date.slice(5)}</span>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-24 h-2 bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-gradient-to-r from-emerald-400 to-cyan-500 rounded-full transition-all duration-500"
+                                                        style={{width: `${(d.count / Math.max(...bookedCallsChartData.map(x => x.count), 1)) * 100}%`}}></div>
+                                                </div>
+                                                <span className="text-cyan-400 font-medium text-sm w-8 text-right">{d.count}</span>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-                            ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No calls yet</p>}
+                            ) : <p className="text-slate-500 text-center py-8">No calls</p>}
                         </div>
-                        <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                            <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Revenue by Offer</h2>
+                        <div className="fade-in fade-in-delay-5 card-glow rounded-2xl p-6">
+                            <h3 className="text-white font-semibold mb-4">Revenue by Offer</h3>
                             {pieData.length > 0 ? (
-                                <div className="space-y-1.5 sm:space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
+                                <div className="space-y-3 max-h-48 overflow-y-auto">
                                     {pieData.sort((a,b) => b.value - a.value).map((d, i) => (
-                                        <div key={i} className="flex justify-between items-center gap-2">
-                                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
-                                                <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
-                                                <span className="text-slate-300 text-xs sm:text-sm truncate">{d.name}</span>
+                                        <div key={i} className="flex justify-between items-center gap-3">
+                                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
+                                                <span className="text-slate-300 text-sm truncate">{d.name}</span>
                                             </div>
-                                            <span className="text-green-400 font-medium text-xs sm:text-sm flex-shrink-0">${d.value.toLocaleString()}</span>
+                                            <span className="text-emerald-400 font-medium text-sm flex-shrink-0">${d.value.toLocaleString()}</span>
                                         </div>
                                     ))}
                                 </div>
-                            ) : <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No data</p>}
+                            ) : <p className="text-slate-500 text-center py-8">No data</p>}
                         </div>
                     </div>
 
                     {/* Sales Table */}
-                    <div className="bg-white/10 backdrop-blur rounded-xl p-3 sm:p-5 border border-white/10">
-                        <h2 className="text-sm sm:text-lg font-semibold text-white mb-2 sm:mb-4">Sales ({filteredSales.length})</h2>
+                    <div className="fade-in fade-in-delay-5 card-glow rounded-2xl p-6">
+                        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500"></span>
+                            Recent Sales <span className="text-slate-500 font-normal">({filteredSales.length})</span>
+                        </h3>
                         {filteredSales.length === 0 ? (
-                            <p className="text-slate-400 text-center py-4 sm:py-8 text-sm">No sales found</p>
+                            <p className="text-slate-500 text-center py-8">No sales found</p>
                         ) : (
-                            <div className="overflow-x-auto max-h-64 sm:max-h-96 overflow-y-auto -mx-3 px-3 sm:mx-0 sm:px-0">
-                                <table className="w-full min-w-[500px] sm:min-w-0">
-                                    <thead className="sticky top-0 bg-slate-800/95 backdrop-blur">
+                            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                                <table className="w-full">
+                                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur">
                                         <tr className="border-b border-white/10">
-                                            <th className="text-left py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Date</th>
-                                            <th className="text-left py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Offer</th>
-                                            <th className="text-right py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Revenue</th>
-                                            <th className="text-right py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Aff.</th>
-                                            <th className="text-right py-2 sm:py-3 text-slate-400 font-medium text-xs sm:text-sm">Sales</th>
+                                            <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Date</th>
+                                            <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Offer</th>
+                                            <th className="text-right py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Revenue</th>
+                                            <th className="text-right py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Affiliate</th>
+                                            <th className="text-right py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Sales Team</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredSales.map(s => (
-                                            <tr key={s.id} className="border-b border-white/5 hover:bg-white/5">
-                                                <td className="py-2 sm:py-3 text-white text-xs sm:text-sm whitespace-nowrap">{s.date.slice(5)}</td>
-                                                <td className="py-2 sm:py-3 text-purple-300 text-xs sm:text-sm max-w-[120px] sm:max-w-none truncate">{s.offer}</td>
-                                                <td className="py-2 sm:py-3 text-right text-green-400 font-medium text-xs sm:text-sm">${s.revenue.toLocaleString()}</td>
-                                                <td className="py-2 sm:py-3 text-right text-orange-400 font-medium text-xs sm:text-sm">${Math.round(s.revenue * 0.05)}</td>
-                                                <td className="py-2 sm:py-3 text-right text-orange-400 font-medium text-xs sm:text-sm">
-                                                    {s.revenue > 999 ? `$${Math.round(s.revenue * 0.175)}` : '-'}
-                                                </td>
+                                        {filteredSales.slice(0, 50).map(s => (
+                                            <tr key={s.id} className="table-row border-b border-white/5 transition-colors">
+                                                <td className="py-3 text-white text-sm">{s.date.slice(5)}</td>
+                                                <td className="py-3 text-slate-300 text-sm max-w-[200px] truncate">{s.offer}</td>
+                                                <td className="py-3 text-right text-emerald-400 font-medium text-sm">${s.revenue.toLocaleString()}</td>
+                                                <td className="py-3 text-right text-orange-400 text-sm">${Math.round(s.revenue * 0.05)}</td>
+                                                <td className="py-3 text-right text-orange-400 text-sm">{s.revenue > 999 ? `$${Math.round(s.revenue * 0.175)}` : '—'}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -724,10 +828,9 @@
                         )}
                     </div>
 
-                    <div className="mt-3 sm:mt-4 text-center text-slate-500 text-xs">
-                        <span className="hidden sm:inline">Auto-refreshes every 30 min | PST | </span>
-                        <span className="sm:hidden">PST | </span>
-                        {sales.length} transactions
+                    {/* Footer */}
+                    <div className="mt-6 text-center text-slate-600 text-xs">
+                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions
                     </div>
                 </div>
             </div>
