@@ -333,34 +333,24 @@
                 if (ga4SessionsRes && ga4SessionsRes.ok) {
                     const ga4Csv = await ga4SessionsRes.text();
                     const lines = ga4Csv.split('\n');
-                    // Find the "Results Breakdown" section and skip to data rows
-                    let dataStartIdx = -1;
-                    for (let i = 0; i < lines.length; i++) {
-                        if (lines[i].includes('Results Breakdown') || lines[i].toLowerCase().includes('"date"')) {
-                            dataStartIdx = i + 1;
-                            // Skip the header row after Results Breakdown
-                            if (lines[i].includes('Results Breakdown')) dataStartIdx = i + 2;
-                            break;
-                        }
-                    }
                     const sessions = [];
-                    if (dataStartIdx > 0) {
-                        for (let i = dataStartIdx; i < lines.length; i++) {
-                            const line = lines[i].replace(/"/g, '').trim();
-                            if (!line) continue;
-                            const parts = line.split(',');
-                            if (parts.length >= 2) {
-                                const dateStr = String(parts[0]).trim();
-                                const sessCount = parseInt(parts[1]) || 0;
-                                if (dateStr.length === 8 && sessCount > 0) {
-                                    const year = dateStr.substring(0, 4);
-                                    const month = dateStr.substring(4, 6);
-                                    const day = dateStr.substring(6, 8);
-                                    sessions.push({
-                                        date: `${year}-${month}-${day}`,
-                                        sessions: sessCount
-                                    });
-                                }
+                    // Parse all lines looking for date pattern (8 digits starting with 202)
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i].replace(/"/g, '').trim();
+                        if (!line) continue;
+                        const parts = line.split(',');
+                        if (parts.length >= 2) {
+                            const dateStr = String(parts[0]).trim();
+                            const sessCount = parseInt(parts[1]) || 0;
+                            // Check if it looks like a date (8 digits starting with 202)
+                            if (/^202\d{5}$/.test(dateStr) && sessCount > 0) {
+                                const year = dateStr.substring(0, 4);
+                                const month = dateStr.substring(4, 6);
+                                const day = dateStr.substring(6, 8);
+                                sessions.push({
+                                    date: `${year}-${month}-${day}`,
+                                    sessions: sessCount
+                                });
                             }
                         }
                     }
@@ -985,7 +975,7 @@
 
                     {/* Footer */}
                     <div className="mt-6 text-center text-slate-600 text-xs">
-                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions
+                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions • {ga4Sessions.length} GA4 records
                     </div>
                 </div>
             </div>
