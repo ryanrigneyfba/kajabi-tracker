@@ -1,14 +1,21 @@
 /**
  * TikTok Shop Partner API - Auto-fetch Agency Data
  *
- * This script runs via GitHub Actions to automatically fetch
- * financial data from TikTok Shop Partner Center and update
- * agency-data.json in the repository.
+ * Runs via GitHub Actions to automatically fetch financial data
+ * from TikTok Shop Partner Center and update agency-data.json.
+ *
+ * Strategy:
+ * - V2 API: Fetch statements with correct params (shop_cipher, query params)
+ * - V1 API: Fetch creator settlements (legacy, still works)
+ * - Existing data: Always preserved; new data merges with existing records
  *
  * Required GitHub Secrets:
  * - TIKTOK_APP_KEY: Your TikTok Shop app key
  * - TIKTOK_APP_SECRET: Your TikTok Shop app secret
- * - TIKTOK_ACCESS_TOKEN: OAuth access token (obtained via setup script)
+ * - TIKTOK_ACCESS_TOKEN: OAuth access token
+ *
+ * Optional GitHub Secrets:
+ * - TIKTOK_SHOP_CIPHER: Shop cipher for v2 finance API (auto-discovered if not set)
  */
 
 import crypto from 'crypto';
@@ -18,11 +25,15 @@ import path from 'path';
 const APP_KEY = process.env.TIKTOK_APP_KEY;
 const APP_SECRET = process.env.TIKTOK_APP_SECRET;
 const ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN;
+const SHOP_CIPHER = process.env.TIKTOK_SHOP_CIPHER || '';
 
 const API_BASE = 'https://open-api.tiktokglobalshop.com';
 const API_VERSION = '202309';
 
-// Generate HMAC-SHA256 signature for TikTok Shop API
+// ───────────────────────────────────────────────────────
+// API Signature & Request helpers
+// ───────────────────────────────────────────────────────
+
 function generateSign(apiPath, params, body = '') {
     const sortedKeys = Object.keys(params).sort();
     let baseString = apiPath;
@@ -36,7 +47,6 @@ function generateSign(apiPath, params, body = '') {
     return hmac.digest('hex');
 }
 
-// Make an API request to TikTok Shop (supports both v1 and v2 endpoints)
 async function apiRequest(endpoint, queryParams = {}, bodyData = null) {
     const timestamp = Math.floor(Date.now() / 1000);
 
@@ -71,55 +81,120 @@ async function apiRequest(endpoint, queryParams = {}, bodyData = null) {
     }
 
     console.log(`  → ${options.method} ${endpoint}`);
-    const response = await fetch(url, options);
-    return response.json();
+    try {
+        const response = await fetch(url, options);
+        const json = await response.json();
+        if (json.code && json.code !== 0) {
+            console.log(`  ⚠ API response code ${json.code}: ${json.message || ''}`);
+        }
+        return json;
+    } catch (err) {
+        console.log(`  ✗ Request failed: ${err.message}`);
+        return { code: -1, message: err.message };
+    }
 }
 
-// ═══════════════════════════════════════════════════════
-// V2 Finance API: Get Statements (includes distribution payouts)
-// Endpoint: /finance/202309/statements
-// This is the primary v2 endpoint for all financial statements
-// including Product Distribution Service payouts
-// ═══════════════════════════════════════════════════════
-async function fetchStatements() {
-    console.log('Fetching v2 statements (distribution payouts)...');
+// ───────────────────────────────────────────────────────
+// Step 1: Discover shop_cipher from authorized shops
+// ───────────────────────────────────────────────────────
+
+async function getShopCipher() {
+    if (SHOP_CIPHER) {
+        console.log(`Using TIKTOK_SHOP_CIPHER from env: ${SHOP_CIPHER.substring(0, 8)}...`);
+        return SHOP_CIPHER;
+    }
+
+    console.log('Discovering shop_cipher from authorized shops...');
+
+    // Try v2 endpoint
+    try {
+        const result = await apiRequest('/authorization/202309/shops', {
+            page_size: '100',
+        });
+
+        if (result.data && result.data.shops && result.data.shops.length > 0) {
+            const shop = result.data.shops[0];
+            const cipher = shop.cipher || shop.shop_cipher || '';
+            if (cipher) {
+                console.log(`  Found shop cipher: ${cipher.substring(0, 8)}... (shop: ${shop.shop_name || shop.shop_id || 'unknown'})`);
+                return cipher;
+            }
+        }
+    } catch (err) {
+        console.log('  Authorized shops v2 error:', err.message);
+    }
+
+    // Try alternate endpoint paths
+    const altPaths = [
+        '/api/shop/get_authorized',
+        '/authorization/202309/shops/get',
+    ];
+
+    for (const altPath of altPaths) {
+        try {
+            const result = await apiRequest(altPath);
+            if (result.data) {
+                const shops = result.data.shops || result.data.shop_list || [];
+                if (shops.length > 0) {
+                    const cipher = shops[0].cipher || shops[0].shop_cipher || '';
+                    if (cipher) {
+                        console.log(`  Found shop cipher from ${altPath}: ${cipher.substring(0, 8)}...`);
+                        return cipher;
+                    }
+                }
+            }
+        } catch (err) {
+            console.log(`  ${altPath} error:`, err.message);
+        }
+    }
+
+    console.log('  Could not discover shop_cipher automatically.');
+    console.log('  Set TIKTOK_SHOP_CIPHER in GitHub Secrets for v2 finance API access.');
+    return null;
+}
+
+// ───────────────────────────────────────────────────────
+// Step 2: V2 Finance API — Get Statements
+// Uses correct params: shop_cipher, statement_time_ge/lt, page_size
+// GET request with query parameters (NOT POST with body)
+// ───────────────────────────────────────────────────────
+
+async function fetchStatements(shopCipher) {
+    if (!shopCipher) {
+        console.log('Skipping v2 statements (no shop_cipher available).');
+        return null;
+    }
+
+    console.log('Fetching v2 statements...');
 
     const now = new Date();
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    // Try multiple statement types that could contain distribution payouts
-    const statementTypes = [
-        'PRODUCT_DISTRIBUTION',
-        'AFFILIATE',
-        'COMMISSION',
-        'SETTLE',
-        null // no filter - get all
-    ];
-
     let allStatements = [];
+    let pageToken = null;
+    let page = 0;
 
-    for (const stmtType of statementTypes) {
+    do {
+        page++;
+        const queryParams = {
+            shop_cipher: shopCipher,
+            statement_time_ge: String(Math.floor(ninetyDaysAgo.getTime() / 1000)),
+            statement_time_lt: String(Math.floor(now.getTime() / 1000)),
+            page_size: '100',
+            sort_order: 'DESC',
+        };
+
+        if (pageToken) {
+            queryParams.page_token = pageToken;
+        }
+
         try {
-            const bodyData = {
-                page_size: 100,
-                sort_order: 'DESC',
-            };
+            // GET request — no body data
+            const result = await apiRequest('/finance/202309/statements', queryParams);
 
-            // Try with date range in body
-            bodyData.statement_time = {
-                start_time: Math.floor(ninetyDaysAgo.getTime() / 1000),
-                end_time: Math.floor(now.getTime() / 1000),
-            };
-
-            if (stmtType) {
-                bodyData.statement_type = stmtType;
-            }
-
-            const result = await apiRequest('/finance/202309/statements', {}, bodyData);
-
-            if (result.data && (result.data.statements || result.data.statement_list)) {
+            if (result.data) {
                 const stmts = result.data.statements || result.data.statement_list || [];
-                console.log(`  Got ${stmts.length} statements (type: ${stmtType || 'all'})`);
+                console.log(`  Page ${page}: got ${stmts.length} statements`);
 
                 for (const s of stmts) {
                     allStatements.push({
@@ -129,115 +204,41 @@ async function fetchStatements() {
                             : (s.settle_time ? new Date(s.settle_time * 1000).toISOString().split('T')[0] : ''),
                         settlement_amount: parseFloat(s.settlement_amount || s.revenue_amount || s.amount || 0),
                         amount_paid: parseFloat(s.payout_amount || s.paid_amount || s.settlement_amount || s.amount || 0),
-                        type: s.statement_type || s.type || stmtType || 'unknown',
+                        type: s.statement_type || s.type || 'statement',
                         currency: s.currency || 'USD',
                     });
                 }
 
-                // If we got results with no filter, no need to try type filters
-                if (!stmtType && stmts.length > 0) break;
+                // Handle pagination
+                pageToken = result.data.next_page_token || result.data.page_token || null;
+                if (stmts.length < 100) pageToken = null; // Last page
+            } else {
+                pageToken = null;
             }
         } catch (err) {
-            console.log(`  Statements (type: ${stmtType || 'all'}) error:`, err.message);
+            console.log(`  Statements page ${page} error:`, err.message);
+            pageToken = null;
         }
-    }
-
-    // Also try the v2 endpoint with query params instead of body
-    if (allStatements.length === 0) {
-        try {
-            const result = await apiRequest('/finance/202309/statements', {
-                page_size: '100',
-                start_time: String(Math.floor(ninetyDaysAgo.getTime() / 1000)),
-                end_time: String(Math.floor(now.getTime() / 1000)),
-            });
-
-            if (result.data && (result.data.statements || result.data.statement_list)) {
-                const stmts = result.data.statements || result.data.statement_list || [];
-                console.log(`  Got ${stmts.length} statements (query params)`);
-                for (const s of stmts) {
-                    allStatements.push({
-                        statement_id: s.id || s.statement_id || '',
-                        date: s.statement_time
-                            ? new Date(s.statement_time * 1000).toISOString().split('T')[0]
-                            : '',
-                        settlement_amount: parseFloat(s.settlement_amount || s.revenue_amount || s.amount || 0),
-                        amount_paid: parseFloat(s.payout_amount || s.paid_amount || s.settlement_amount || s.amount || 0),
-                        type: s.statement_type || s.type || 'unknown',
-                        currency: s.currency || 'USD',
-                    });
-                }
-            }
-        } catch (err) {
-            console.log('  Statements (query params) error:', err.message);
-        }
-    }
+    } while (pageToken && page < 20); // Safety limit
 
     // Deduplicate
     const seen = new Set();
     allStatements = allStatements.filter(s => {
-        const key = s.statement_id || `${s.date}-${s.amount_paid}-${s.type}`;
+        const key = s.statement_id || `${s.date}-${s.amount_paid}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
     });
 
+    console.log(`  Total unique v2 statements: ${allStatements.length}`);
     return allStatements.length > 0 ? allStatements : null;
 }
 
-// ═══════════════════════════════════════════════════════
-// V2 Finance API: Get Payments
-// Try to get actual payout/payment records
-// ═══════════════════════════════════════════════════════
-async function fetchPayments() {
-    console.log('Fetching v2 payments...');
+// ───────────────────────────────────────────────────────
+// Step 3: V1 Legacy — Fetch creator settlements
+// These are the small creator service payouts ($7-$90)
+// ───────────────────────────────────────────────────────
 
-    const now = new Date();
-    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-
-    const endpoints = [
-        '/finance/202309/payments',
-        '/finance/202309/payouts',
-        '/finance/202309/withdrawals',
-    ];
-
-    for (const endpoint of endpoints) {
-        try {
-            const result = await apiRequest(endpoint, {
-                page_size: '100',
-                start_time: String(Math.floor(ninetyDaysAgo.getTime() / 1000)),
-                end_time: String(Math.floor(now.getTime() / 1000)),
-            });
-
-            if (result.data && !result.code) {
-                const payments = result.data.payments || result.data.payment_list ||
-                    result.data.payouts || result.data.payout_list ||
-                    result.data.withdrawals || result.data.withdrawal_list || [];
-
-                if (payments.length > 0) {
-                    console.log(`  Got ${payments.length} payments from ${endpoint}`);
-                    return payments.map(p => ({
-                        payment_id: p.id || p.payment_id || p.payout_id || '',
-                        date: p.payment_time
-                            ? new Date(p.payment_time * 1000).toISOString().split('T')[0]
-                            : (p.create_time ? new Date(p.create_time * 1000).toISOString().split('T')[0] : ''),
-                        amount: parseFloat(p.amount || p.payout_amount || p.payment_amount || 0),
-                        status: p.status || '',
-                        type: p.type || p.payment_type || 'distribution',
-                        currency: p.currency || 'USD',
-                    }));
-                }
-            }
-        } catch (err) {
-            console.log(`  ${endpoint} error:`, err.message);
-        }
-    }
-
-    return null;
-}
-
-// ═══════════════════════════════════════════════════════
-// V1 Legacy: Fetch settlements/payment data (creator payouts)
-// ═══════════════════════════════════════════════════════
 async function fetchSettlements() {
     console.log('Fetching v1 settlements (creator payouts)...');
 
@@ -266,39 +267,16 @@ async function fetchSettlements() {
     return null;
 }
 
-// Fetch transactions data
-async function fetchTransactions() {
-    console.log('Fetching transactions...');
+// ───────────────────────────────────────────────────────
+// Step 4: Analytics
+// ───────────────────────────────────────────────────────
 
-    const now = new Date();
-    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-
-    try {
-        const result = await apiRequest('/api/finance/transactions/search', {}, {
-            request_time_from: Math.floor(ninetyDaysAgo.getTime() / 1000),
-            request_time_to: Math.floor(now.getTime() / 1000),
-            page_size: 100,
-            transaction_type: 'SETTLE',
-        });
-
-        if (result.data && result.data.transaction_list) {
-            return result.data.transaction_list;
-        }
-    } catch (err) {
-        console.log('  Transactions API error:', err.message);
-    }
-
-    return null;
-}
-
-// Fetch partner analytics data
 async function fetchAnalytics() {
     console.log('Fetching analytics...');
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
 
-    // Try the data overview / analytics endpoint
     try {
         const result = await apiRequest('/api/data/overview', {
             start_date: thirtyDaysAgo.toISOString().split('T')[0],
@@ -320,35 +298,41 @@ async function fetchAnalytics() {
     return null;
 }
 
+// ───────────────────────────────────────────────────────
 // Main execution
+// ───────────────────────────────────────────────────────
+
 async function main() {
     console.log('=== TikTok Shop Agency Data Fetcher ===');
     console.log(`Timestamp: ${new Date().toISOString()}`);
 
     if (!APP_KEY || !APP_SECRET || !ACCESS_TOKEN) {
-        console.error('Missing required environment variables. Ensure TIKTOK_APP_KEY, TIKTOK_APP_SECRET, and TIKTOK_ACCESS_TOKEN are set as GitHub Secrets.');
+        console.error('Missing required environment variables.');
+        console.log('Ensure TIKTOK_APP_KEY, TIKTOK_APP_SECRET, and TIKTOK_ACCESS_TOKEN are set as GitHub Secrets.');
         console.log('Keeping existing agency-data.json unchanged.');
         process.exit(0);
     }
 
-    // Read existing data
+    // Read existing data (always preserved as baseline)
     const dataPath = path.join(process.cwd(), 'agency-data.json');
     let existingData = { analytics: {}, payouts: [], distribution_payouts: [] };
 
     try {
         const raw = fs.readFileSync(dataPath, 'utf8');
         existingData = JSON.parse(raw);
+        console.log(`Loaded existing data: ${(existingData.payouts || []).length} creator payouts, ${(existingData.distribution_payouts || []).length} distribution payouts`);
     } catch (err) {
         console.log('No existing agency-data.json found, creating new one.');
     }
 
+    // Discover shop cipher for v2 API
+    const shopCipher = await getShopCipher();
+
     // Fetch all data in parallel
-    const [settlements, transactions, analytics, v2Statements, v2Payments] = await Promise.all([
+    const [settlements, analytics, v2Statements] = await Promise.all([
         fetchSettlements(),
-        fetchTransactions(),
         fetchAnalytics(),
-        fetchStatements(),
-        fetchPayments(),
+        fetchStatements(shopCipher),
     ]);
 
     // ── Update creator payouts (v1 settlements) ──
@@ -366,38 +350,17 @@ async function main() {
         });
         payouts.sort((a, b) => b.date.localeCompare(a.date));
     } else {
-        console.log('No new creator settlements from v1 API, keeping existing.');
+        console.log('No new creator settlements, keeping existing.');
     }
 
-    // ── Update distribution payouts (v2 statements + payments) ──
+    // ── Update distribution payouts ──
+    // Existing distribution_payouts are ALWAYS preserved (seeded from Partner Center)
+    // V2 API statements merge as new entries if any come back
     let distPayouts = existingData.distribution_payouts || [];
 
-    // Merge v2 statements
     if (v2Statements && v2Statements.length > 0) {
-        console.log(`Got ${v2Statements.length} distribution statements from v2 API`);
-        const newDistPayouts = v2Statements.map(s => ({
-            statement_id: s.statement_id,
-            date: s.date,
-            settlement_amount: s.settlement_amount,
-            amount_paid: s.amount_paid,
-            type: s.type,
-            currency: s.currency,
-        }));
-        distPayouts = [...newDistPayouts, ...distPayouts];
-    }
-
-    // Merge v2 payments
-    if (v2Payments && v2Payments.length > 0) {
-        console.log(`Got ${v2Payments.length} payments from v2 API`);
-        const newPaymentPayouts = v2Payments.map(p => ({
-            statement_id: p.payment_id,
-            date: p.date,
-            settlement_amount: p.amount,
-            amount_paid: p.amount,
-            type: p.type || 'payment',
-            currency: p.currency,
-        }));
-        distPayouts = [...newPaymentPayouts, ...distPayouts];
+        console.log(`Got ${v2Statements.length} statements from v2 API — merging with existing`);
+        distPayouts = [...v2Statements, ...distPayouts];
     }
 
     // Deduplicate distribution payouts
@@ -416,14 +379,14 @@ async function main() {
     let analyticsData = existingData.analytics || {};
 
     if (analytics) {
-        console.log('Got analytics data from API');
+        console.log('Got analytics data');
         analyticsData = {
             ...analyticsData,
             ...analytics,
             last_updated: new Date().toISOString().split('T')[0],
         };
     } else {
-        console.log('No new analytics from API, keeping existing.');
+        console.log('No new analytics, keeping existing.');
         analyticsData.last_updated = new Date().toISOString().split('T')[0];
     }
 
@@ -435,9 +398,11 @@ async function main() {
     };
 
     fs.writeFileSync(dataPath, JSON.stringify(updatedData, null, 2) + '\n');
-    console.log(`\nUpdated agency-data.json:`);
-    console.log(`  - ${payouts.length} creator payouts`);
-    console.log(`  - ${distPayouts.length} distribution payouts`);
+
+    const totalDist = distPayouts.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
+    console.log(`\n=== Updated agency-data.json ===`);
+    console.log(`  Creator payouts: ${payouts.length}`);
+    console.log(`  Distribution payouts: ${distPayouts.length} ($${totalDist.toFixed(2)})`);
     console.log('=== Done ===');
 }
 
