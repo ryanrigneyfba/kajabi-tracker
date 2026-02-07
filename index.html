@@ -135,6 +135,7 @@
     const FIXED_COSTS_URL = `https://docs.google.com/spreadsheets/d/${FIXED_COSTS_SHEET_ID}/gviz/tq?tqx=out:csv&gid=266077976`;
     const GA4_SESSIONS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=240030115`;
     const REFRESH_INTERVAL = 30 * 60 * 1000;
+    const AGENCY_DATA_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/agency-data.json";
 
     // Skeleton Component
     const Skeleton = ({className}) => (
@@ -202,6 +203,16 @@
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
+        ),
+        tiktok: () => (
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.11v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.75a8.19 8.19 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.18z"/>
+            </svg>
+        ),
+        agency: () => (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
         )
     };
 
@@ -223,6 +234,7 @@
         const [fixedCosts, setFixedCosts] = useState([]);
         const [ga4Sessions, setGa4Sessions] = useState([]);
         const [loadError, setLoadError] = useState("");
+        const [agencyData, setAgencyData] = useState({analytics: {}, payouts: []});
 
         useEffect(() => {
             if(localStorage.getItem("kajabi_auth") === "true") setAuth(true);
@@ -260,13 +272,14 @@
             setSyncing(true);
             setLoadError("");
             try {
-                const [jsonRes, sheetRes, bookedRes, tiktokExpensesRes, fixedCostsRes, ga4SessionsRes] = await Promise.all([
+                const [jsonRes, sheetRes, bookedRes, tiktokExpensesRes, fixedCostsRes, ga4SessionsRes, agencyRes] = await Promise.all([
                     fetch(JSON_URL + "?t=" + Date.now()),
                     fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(BOOKED_CALLS_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(TIKTOK_EXPENSES_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(FIXED_COSTS_URL + "&t=" + Date.now()).catch(() => null),
-                    fetch(GA4_SESSIONS_URL + "&t=" + Date.now()).catch(() => null)
+                    fetch(GA4_SESSIONS_URL + "&t=" + Date.now()).catch(() => null),
+                    fetch(AGENCY_DATA_URL + "?t=" + Date.now()).catch(() => null)
                 ]);
 
                 let historicalSales = [];
@@ -370,6 +383,15 @@
                         }
                     }
                     setGa4Sessions(sessions);
+                }
+
+                if (agencyRes && agencyRes.ok) {
+                    const agencyJson = await agencyRes.json();
+                    const payouts = (agencyJson.payouts || []).sort((a, b) => b.date.localeCompare(a.date));
+                    setAgencyData({
+                        analytics: agencyJson.analytics || {},
+                        payouts: payouts
+                    });
                 }
 
                 setLastSync(new Date().toLocaleTimeString());
@@ -675,6 +697,13 @@
         const profitChangePercent = prevProfit !== 0
             ? ((profit - prevProfit) / Math.abs(prevProfit) * 100).toFixed(1)
             : null;
+
+        // Agency computed values
+        const totalAgencyPayouts = agencyData.payouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
+        const agencyGMV = agencyData.analytics.affiliate_gmv || 0;
+        const agencyCommission = agencyData.analytics.est_commission || 0;
+        const agencyOrders = agencyData.analytics.orders || 0;
+        const agencyRefunds = agencyData.analytics.gmv_refund || 0;
 
         const chartData = useMemo(() => {
             const grouped = {};
@@ -1123,9 +1152,138 @@
                         )}
                     </div>
 
+                    {/* ═══════════ AGENCY EARNINGS SECTION ═══════════ */}
+                    <div className="mt-10 mb-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent"></div>
+                            <div className="flex items-center gap-2 px-4 py-2 bg-pink-500/10 border border-pink-500/30 rounded-xl">
+                                <Icons.tiktok />
+                                <span className="text-pink-400 font-semibold text-sm">Agency Earnings — TikTok Partner Center</span>
+                            </div>
+                            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent"></div>
+                        </div>
+
+                        {/* Agency KPI Cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400">
+                                        <Icons.revenue />
+                                    </div>
+                                    <span className="text-slate-400 text-sm">Affiliate GMV</span>
+                                </div>
+                                <p className="text-2xl font-bold text-white">
+                                    <AnimatedNumber value={agencyGMV} prefix="$" />
+                                </p>
+                                <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
+                            </div>
+                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400">
+                                        <Icons.agency />
+                                    </div>
+                                    <span className="text-slate-400 text-sm">Est. Commission</span>
+                                </div>
+                                <p className="text-2xl font-bold text-pink-400">
+                                    <AnimatedNumber value={agencyCommission} prefix="$" />
+                                </p>
+                                <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
+                            </div>
+                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400">
+                                        <Icons.sales />
+                                    </div>
+                                    <span className="text-slate-400 text-sm">Orders</span>
+                                </div>
+                                <p className="text-2xl font-bold text-white">
+                                    <AnimatedNumber value={agencyOrders} />
+                                </p>
+                                <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
+                            </div>
+                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                        <Icons.profit />
+                                    </div>
+                                    <span className="text-slate-400 text-sm">Total Payouts</span>
+                                </div>
+                                <p className="text-2xl font-bold text-emerald-400">
+                                    <AnimatedNumber value={totalAgencyPayouts} prefix="$" decimals={2} />
+                                </p>
+                                <p className="text-slate-600 text-xs mt-1">{agencyData.payouts.length} payments</p>
+                            </div>
+                        </div>
+
+                        {/* Agency Secondary Stats */}
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                            <div className="card-glow rounded-2xl p-5" style={{borderColor: 'rgba(236, 72, 153, 0.1)'}}>
+                                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">GMV (Refunds)</p>
+                                <p className="text-xl font-bold text-red-400">${agencyRefunds.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
+                            </div>
+                            <div className="card-glow rounded-2xl p-5" style={{borderColor: 'rgba(236, 72, 153, 0.1)'}}>
+                                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Commission Rate</p>
+                                <p className="text-xl font-bold text-pink-400">{agencyGMV > 0 ? ((agencyCommission / agencyGMV) * 100).toFixed(1) : '0'}%</p>
+                            </div>
+                            <div className="card-glow rounded-2xl p-5" style={{borderColor: 'rgba(236, 72, 153, 0.1)'}}>
+                                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Avg Order Value</p>
+                                <p className="text-xl font-bold text-white">${agencyOrders > 0 ? (agencyGMV / agencyOrders).toFixed(2) : '0'}</p>
+                            </div>
+                        </div>
+
+                        {/* Payment History */}
+                        <div className="card-glow rounded-2xl p-6 mb-6" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-white font-semibold flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-pink-400 to-rose-500"></span>
+                                    Payment History <span className="text-slate-500 font-normal">({agencyData.payouts.length})</span>
+                                </h3>
+                                <span className="text-emerald-400 text-xs flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    Auto-synced
+                                </span>
+                            </div>
+
+                            {/* Payment Table */}
+                            {agencyData.payouts.length === 0 ? (
+                                <p className="text-slate-500 text-center py-8">No payment data yet</p>
+                            ) : (
+                                <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                                    <table className="w-full">
+                                        <thead className="sticky top-0 bg-slate-900/95 backdrop-blur">
+                                            <tr className="border-b border-white/10">
+                                                <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Payment ID</th>
+                                                <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Date</th>
+                                                <th className="text-right py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Settlement</th>
+                                                <th className="text-right py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Amount Paid</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {agencyData.payouts.map((p, i) => (
+                                                <tr key={i} className="table-row border-b border-white/5 transition-colors">
+                                                    <td className="py-3 text-slate-400 text-sm font-mono text-xs">{(p.payment_id || '').slice(-8) || '—'}</td>
+                                                    <td className="py-3 text-white text-sm">{p.date}</td>
+                                                    <td className="py-3 text-right text-slate-300 text-sm">${(p.settlement_amount || 0).toFixed(2)}</td>
+                                                    <td className="py-3 text-right text-emerald-400 font-medium text-sm">${(p.amount_paid || 0).toFixed(2)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Data Source Note */}
+                        <div className="bg-pink-500/5 border border-pink-500/20 rounded-xl px-4 py-2 text-slate-500 text-xs flex items-center gap-2">
+                            <Icons.tiktok />
+                            Auto-synced from TikTok Shop Partner Center — Product Distribution Service (via GitHub Actions)
+                            {agencyData.analytics.last_updated && <span className="text-pink-400 ml-auto">Last sync: {agencyData.analytics.last_updated}</span>}
+                        </div>
+                    </div>
+
                     {/* Footer */}
                     <div className="mt-6 text-center text-slate-600 text-xs">
-                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions • {ga4Sessions.length} GA4 records
+                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions • {ga4Sessions.length} GA4 records • {agencyData.payouts.length} agency payouts
                     </div>
                 </div>
             </div>
