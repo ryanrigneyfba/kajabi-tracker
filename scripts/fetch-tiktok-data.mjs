@@ -23,9 +23,9 @@ const API_BASE = 'https://open-api.tiktokglobalshop.com';
 const API_VERSION = '202309';
 
 // Generate HMAC-SHA256 signature for TikTok Shop API
-function generateSign(path, params, body = '') {
+function generateSign(apiPath, params, body = '') {
     const sortedKeys = Object.keys(params).sort();
-    let baseString = path;
+    let baseString = apiPath;
     for (const key of sortedKeys) {
         baseString += key + params[key];
     }
@@ -36,7 +36,7 @@ function generateSign(path, params, body = '') {
     return hmac.digest('hex');
 }
 
-// Make an API request to TikTok Shop
+// Make an API request to TikTok Shop (supports both v1 and v2 endpoints)
 async function apiRequest(endpoint, queryParams = {}, bodyData = null) {
     const timestamp = Math.floor(Date.now() / 1000);
 
@@ -70,15 +70,177 @@ async function apiRequest(endpoint, queryParams = {}, bodyData = null) {
         options.body = bodyStr;
     }
 
+    console.log(`  → ${options.method} ${endpoint}`);
     const response = await fetch(url, options);
     return response.json();
 }
 
-// Fetch settlements/payment data
-async function fetchSettlements() {
-    console.log('Fetching settlements...');
+// ═══════════════════════════════════════════════════════
+// V2 Finance API: Get Statements (includes distribution payouts)
+// Endpoint: /finance/202309/statements
+// This is the primary v2 endpoint for all financial statements
+// including Product Distribution Service payouts
+// ═══════════════════════════════════════════════════════
+async function fetchStatements() {
+    console.log('Fetching v2 statements (distribution payouts)...');
 
-    // Get settlements from the last 90 days
+    const now = new Date();
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    // Try multiple statement types that could contain distribution payouts
+    const statementTypes = [
+        'PRODUCT_DISTRIBUTION',
+        'AFFILIATE',
+        'COMMISSION',
+        'SETTLE',
+        null // no filter - get all
+    ];
+
+    let allStatements = [];
+
+    for (const stmtType of statementTypes) {
+        try {
+            const bodyData = {
+                page_size: 100,
+                sort_order: 'DESC',
+            };
+
+            // Try with date range in body
+            bodyData.statement_time = {
+                start_time: Math.floor(ninetyDaysAgo.getTime() / 1000),
+                end_time: Math.floor(now.getTime() / 1000),
+            };
+
+            if (stmtType) {
+                bodyData.statement_type = stmtType;
+            }
+
+            const result = await apiRequest('/finance/202309/statements', {}, bodyData);
+
+            if (result.data && (result.data.statements || result.data.statement_list)) {
+                const stmts = result.data.statements || result.data.statement_list || [];
+                console.log(`  Got ${stmts.length} statements (type: ${stmtType || 'all'})`);
+
+                for (const s of stmts) {
+                    allStatements.push({
+                        statement_id: s.id || s.statement_id || '',
+                        date: s.statement_time
+                            ? new Date(s.statement_time * 1000).toISOString().split('T')[0]
+                            : (s.settle_time ? new Date(s.settle_time * 1000).toISOString().split('T')[0] : ''),
+                        settlement_amount: parseFloat(s.settlement_amount || s.revenue_amount || s.amount || 0),
+                        amount_paid: parseFloat(s.payout_amount || s.paid_amount || s.settlement_amount || s.amount || 0),
+                        type: s.statement_type || s.type || stmtType || 'unknown',
+                        currency: s.currency || 'USD',
+                    });
+                }
+
+                // If we got results with no filter, no need to try type filters
+                if (!stmtType && stmts.length > 0) break;
+            }
+        } catch (err) {
+            console.log(`  Statements (type: ${stmtType || 'all'}) error:`, err.message);
+        }
+    }
+
+    // Also try the v2 endpoint with query params instead of body
+    if (allStatements.length === 0) {
+        try {
+            const result = await apiRequest('/finance/202309/statements', {
+                page_size: '100',
+                start_time: String(Math.floor(ninetyDaysAgo.getTime() / 1000)),
+                end_time: String(Math.floor(now.getTime() / 1000)),
+            });
+
+            if (result.data && (result.data.statements || result.data.statement_list)) {
+                const stmts = result.data.statements || result.data.statement_list || [];
+                console.log(`  Got ${stmts.length} statements (query params)`);
+                for (const s of stmts) {
+                    allStatements.push({
+                        statement_id: s.id || s.statement_id || '',
+                        date: s.statement_time
+                            ? new Date(s.statement_time * 1000).toISOString().split('T')[0]
+                            : '',
+                        settlement_amount: parseFloat(s.settlement_amount || s.revenue_amount || s.amount || 0),
+                        amount_paid: parseFloat(s.payout_amount || s.paid_amount || s.settlement_amount || s.amount || 0),
+                        type: s.statement_type || s.type || 'unknown',
+                        currency: s.currency || 'USD',
+                    });
+                }
+            }
+        } catch (err) {
+            console.log('  Statements (query params) error:', err.message);
+        }
+    }
+
+    // Deduplicate
+    const seen = new Set();
+    allStatements = allStatements.filter(s => {
+        const key = s.statement_id || `${s.date}-${s.amount_paid}-${s.type}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    return allStatements.length > 0 ? allStatements : null;
+}
+
+// ═══════════════════════════════════════════════════════
+// V2 Finance API: Get Payments
+// Try to get actual payout/payment records
+// ═══════════════════════════════════════════════════════
+async function fetchPayments() {
+    console.log('Fetching v2 payments...');
+
+    const now = new Date();
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    const endpoints = [
+        '/finance/202309/payments',
+        '/finance/202309/payouts',
+        '/finance/202309/withdrawals',
+    ];
+
+    for (const endpoint of endpoints) {
+        try {
+            const result = await apiRequest(endpoint, {
+                page_size: '100',
+                start_time: String(Math.floor(ninetyDaysAgo.getTime() / 1000)),
+                end_time: String(Math.floor(now.getTime() / 1000)),
+            });
+
+            if (result.data && !result.code) {
+                const payments = result.data.payments || result.data.payment_list ||
+                    result.data.payouts || result.data.payout_list ||
+                    result.data.withdrawals || result.data.withdrawal_list || [];
+
+                if (payments.length > 0) {
+                    console.log(`  Got ${payments.length} payments from ${endpoint}`);
+                    return payments.map(p => ({
+                        payment_id: p.id || p.payment_id || p.payout_id || '',
+                        date: p.payment_time
+                            ? new Date(p.payment_time * 1000).toISOString().split('T')[0]
+                            : (p.create_time ? new Date(p.create_time * 1000).toISOString().split('T')[0] : ''),
+                        amount: parseFloat(p.amount || p.payout_amount || p.payment_amount || 0),
+                        status: p.status || '',
+                        type: p.type || p.payment_type || 'distribution',
+                        currency: p.currency || 'USD',
+                    }));
+                }
+            }
+        } catch (err) {
+            console.log(`  ${endpoint} error:`, err.message);
+        }
+    }
+
+    return null;
+}
+
+// ═══════════════════════════════════════════════════════
+// V1 Legacy: Fetch settlements/payment data (creator payouts)
+// ═══════════════════════════════════════════════════════
+async function fetchSettlements() {
+    console.log('Fetching v1 settlements (creator payouts)...');
+
     const now = new Date();
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
@@ -98,7 +260,7 @@ async function fetchSettlements() {
             }));
         }
     } catch (err) {
-        console.log('Settlements API error:', err.message);
+        console.log('  Settlements API error:', err.message);
     }
 
     return null;
@@ -123,7 +285,7 @@ async function fetchTransactions() {
             return result.data.transaction_list;
         }
     } catch (err) {
-        console.log('Transactions API error:', err.message);
+        console.log('  Transactions API error:', err.message);
     }
 
     return null;
@@ -152,7 +314,7 @@ async function fetchAnalytics() {
             };
         }
     } catch (err) {
-        console.log('Analytics API error:', err.message);
+        console.log('  Analytics API error:', err.message);
     }
 
     return null;
@@ -165,15 +327,13 @@ async function main() {
 
     if (!APP_KEY || !APP_SECRET || !ACCESS_TOKEN) {
         console.error('Missing required environment variables. Ensure TIKTOK_APP_KEY, TIKTOK_APP_SECRET, and TIKTOK_ACCESS_TOKEN are set as GitHub Secrets.');
-
-        // If secrets aren't set yet, just keep existing data
         console.log('Keeping existing agency-data.json unchanged.');
         process.exit(0);
     }
 
     // Read existing data
     const dataPath = path.join(process.cwd(), 'agency-data.json');
-    let existingData = { analytics: {}, payouts: [] };
+    let existingData = { analytics: {}, payouts: [], distribution_payouts: [] };
 
     try {
         const raw = fs.readFileSync(dataPath, 'utf8');
@@ -182,20 +342,20 @@ async function main() {
         console.log('No existing agency-data.json found, creating new one.');
     }
 
-    // Fetch all data
-    const [settlements, transactions, analytics] = await Promise.all([
+    // Fetch all data in parallel
+    const [settlements, transactions, analytics, v2Statements, v2Payments] = await Promise.all([
         fetchSettlements(),
         fetchTransactions(),
         fetchAnalytics(),
+        fetchStatements(),
+        fetchPayments(),
     ]);
 
-    // Update payouts if API returned data
+    // ── Update creator payouts (v1 settlements) ──
     let payouts = existingData.payouts || [];
 
     if (settlements && settlements.length > 0) {
-        console.log(`Got ${settlements.length} settlements from API`);
-
-        // Merge with existing, deduplicate
+        console.log(`Got ${settlements.length} creator settlements from v1 API`);
         const allPayouts = [...settlements, ...payouts];
         const seen = new Set();
         payouts = allPayouts.filter(p => {
@@ -206,10 +366,53 @@ async function main() {
         });
         payouts.sort((a, b) => b.date.localeCompare(a.date));
     } else {
-        console.log('No new settlements from API, keeping existing payouts.');
+        console.log('No new creator settlements from v1 API, keeping existing.');
     }
 
-    // Update analytics if API returned data
+    // ── Update distribution payouts (v2 statements + payments) ──
+    let distPayouts = existingData.distribution_payouts || [];
+
+    // Merge v2 statements
+    if (v2Statements && v2Statements.length > 0) {
+        console.log(`Got ${v2Statements.length} distribution statements from v2 API`);
+        const newDistPayouts = v2Statements.map(s => ({
+            statement_id: s.statement_id,
+            date: s.date,
+            settlement_amount: s.settlement_amount,
+            amount_paid: s.amount_paid,
+            type: s.type,
+            currency: s.currency,
+        }));
+        distPayouts = [...newDistPayouts, ...distPayouts];
+    }
+
+    // Merge v2 payments
+    if (v2Payments && v2Payments.length > 0) {
+        console.log(`Got ${v2Payments.length} payments from v2 API`);
+        const newPaymentPayouts = v2Payments.map(p => ({
+            statement_id: p.payment_id,
+            date: p.date,
+            settlement_amount: p.amount,
+            amount_paid: p.amount,
+            type: p.type || 'payment',
+            currency: p.currency,
+        }));
+        distPayouts = [...newPaymentPayouts, ...distPayouts];
+    }
+
+    // Deduplicate distribution payouts
+    if (distPayouts.length > 0) {
+        const seen = new Set();
+        distPayouts = distPayouts.filter(p => {
+            const key = p.statement_id || `${p.date}-${p.amount_paid}-${p.type}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        distPayouts.sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    // ── Update analytics ──
     let analyticsData = existingData.analytics || {};
 
     if (analytics) {
@@ -228,10 +431,13 @@ async function main() {
     const updatedData = {
         analytics: analyticsData,
         payouts: payouts,
+        distribution_payouts: distPayouts,
     };
 
     fs.writeFileSync(dataPath, JSON.stringify(updatedData, null, 2) + '\n');
-    console.log(`Updated agency-data.json with ${payouts.length} payouts`);
+    console.log(`\nUpdated agency-data.json:`);
+    console.log(`  - ${payouts.length} creator payouts`);
+    console.log(`  - ${distPayouts.length} distribution payouts`);
     console.log('=== Done ===');
 }
 

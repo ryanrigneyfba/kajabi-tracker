@@ -136,6 +136,9 @@
     const GA4_SESSIONS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=240030115`;
     const REFRESH_INTERVAL = 30 * 60 * 1000;
     const AGENCY_DATA_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/agency-data.json";
+    // Distribution payouts from Google Sheet (fallback/supplement for API data)
+    // Add a tab called "Distribution Payouts" in your spreadsheet with columns: date, amount, type, notes
+    const DIST_PAYOUTS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=0&sheet=Distribution+Payouts`;
 
     // Skeleton Component
     const Skeleton = ({className}) => (
@@ -234,7 +237,9 @@
         const [fixedCosts, setFixedCosts] = useState([]);
         const [ga4Sessions, setGa4Sessions] = useState([]);
         const [loadError, setLoadError] = useState("");
-        const [agencyData, setAgencyData] = useState({analytics: {}, payouts: []});
+        const [agencyData, setAgencyData] = useState({analytics: {}, payouts: [], distribution_payouts: []});
+        const [activeTab, setActiveTab] = useState("dashboard");
+        const [distributionPayouts, setDistributionPayouts] = useState([]);
 
         useEffect(() => {
             if(localStorage.getItem("kajabi_auth") === "true") setAuth(true);
@@ -272,14 +277,15 @@
             setSyncing(true);
             setLoadError("");
             try {
-                const [jsonRes, sheetRes, bookedRes, tiktokExpensesRes, fixedCostsRes, ga4SessionsRes, agencyRes] = await Promise.all([
+                const [jsonRes, sheetRes, bookedRes, tiktokExpensesRes, fixedCostsRes, ga4SessionsRes, agencyRes, distPayoutsRes] = await Promise.all([
                     fetch(JSON_URL + "?t=" + Date.now()),
                     fetch(SHEET_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(BOOKED_CALLS_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(TIKTOK_EXPENSES_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(FIXED_COSTS_URL + "&t=" + Date.now()).catch(() => null),
                     fetch(GA4_SESSIONS_URL + "&t=" + Date.now()).catch(() => null),
-                    fetch(AGENCY_DATA_URL + "?t=" + Date.now()).catch(() => null)
+                    fetch(AGENCY_DATA_URL + "?t=" + Date.now()).catch(() => null),
+                    fetch(DIST_PAYOUTS_URL + "&t=" + Date.now()).catch(() => null)
                 ]);
 
                 let historicalSales = [];
@@ -388,10 +394,26 @@
                 if (agencyRes && agencyRes.ok) {
                     const agencyJson = await agencyRes.json();
                     const payouts = (agencyJson.payouts || []).sort((a, b) => b.date.localeCompare(a.date));
+                    const apiDistPayouts = (agencyJson.distribution_payouts || []).sort((a, b) => b.date.localeCompare(a.date));
                     setAgencyData({
                         analytics: agencyJson.analytics || {},
-                        payouts: payouts
+                        payouts: payouts,
+                        distribution_payouts: apiDistPayouts
                     });
+                }
+
+                // Load distribution payouts from Google Sheet (supplement/fallback)
+                if (distPayoutsRes && distPayoutsRes.ok) {
+                    const distCsv = await distPayoutsRes.text();
+                    const distData = parseCSV(distCsv);
+                    const sheetDistPayouts = distData.map((row, idx) => ({
+                        id: idx,
+                        date: row.date || '',
+                        amount: parseFloat(row.amount) || 0,
+                        type: row.type || 'distribution',
+                        notes: row.notes || ''
+                    })).filter(d => d.date && d.amount > 0);
+                    setDistributionPayouts(sheetDistPayouts);
                 }
 
                 setLastSync(new Date().toLocaleTimeString());
@@ -699,11 +721,22 @@
             : null;
 
         // Agency computed values
-        const totalAgencyPayouts = agencyData.payouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
+        const totalCreatorPayouts = agencyData.payouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
         const agencyGMV = agencyData.analytics.affiliate_gmv || 0;
         const agencyCommission = agencyData.analytics.est_commission || 0;
         const agencyOrders = agencyData.analytics.orders || 0;
         const agencyRefunds = agencyData.analytics.gmv_refund || 0;
+
+        // Distribution payouts: combine API data + Google Sheet data
+        const apiDistPayouts = agencyData.distribution_payouts || [];
+        const totalApiDistPayouts = apiDistPayouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
+        const totalSheetDistPayouts = distributionPayouts.reduce((sum, p) => sum + p.amount, 0);
+        const totalDistributionPayouts = totalApiDistPayouts + totalSheetDistPayouts;
+        const allDistPayouts = [
+            ...apiDistPayouts.map(p => ({...p, source: 'api', amount: p.amount_paid || p.settlement_amount || 0})),
+            ...distributionPayouts.map(p => ({...p, source: 'sheet', statement_id: '', amount: p.amount}))
+        ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const totalAllPayouts = totalDistributionPayouts + totalCreatorPayouts;
 
         const chartData = useMemo(() => {
             const grouped = {};
@@ -791,6 +824,33 @@
                         </div>
                     </div>
 
+                    {/* Tab Navigation */}
+                    <div className="fade-in flex items-center gap-2 mb-6">
+                        <button onClick={() => setActiveTab("dashboard")}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                                activeTab === "dashboard"
+                                    ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/25"
+                                    : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                            }`}>
+                            <Icons.chart />
+                            Business Dashboard
+                        </button>
+                        <button onClick={() => setActiveTab("agency")}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                                activeTab === "agency"
+                                    ? "bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/25"
+                                    : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                            }`}>
+                            <Icons.tiktok />
+                            Agency Earnings
+                            {agencyCommission > 0 && (
+                                <span className="bg-pink-400/20 text-pink-300 text-xs px-2 py-0.5 rounded-full">
+                                    ${(agencyCommission / 1000).toFixed(0)}K
+                                </span>
+                            )}
+                        </button>
+                    </div>
+
                     {/* Data Notice */}
                     <div className="fade-in bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2 mb-6 text-slate-400 text-xs flex items-center gap-2">
                         <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -805,6 +865,7 @@
                         </div>
                     )}
 
+                    {activeTab === "dashboard" && (<>
                     {/* Date Range Selector */}
                     <div className="fade-in fade-in-delay-1 mb-8">
                         <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -1152,8 +1213,11 @@
                         )}
                     </div>
 
+                    </>)}
+
                     {/* ═══════════ AGENCY EARNINGS SECTION ═══════════ */}
-                    <div className="mt-10 mb-6">
+                    {activeTab === "agency" && (
+                    <div className="mt-2 mb-6">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent"></div>
                             <div className="flex items-center gap-2 px-4 py-2 bg-pink-500/10 border border-pink-500/30 rounded-xl">
@@ -1163,8 +1227,8 @@
                             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent"></div>
                         </div>
 
-                        {/* Agency KPI Cards */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        {/* Primary KPI Cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                             <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
                                 <div className="flex items-center gap-2 mb-2">
                                     <div className="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400">
@@ -1172,7 +1236,7 @@
                                     </div>
                                     <span className="text-slate-400 text-sm">Affiliate GMV</span>
                                 </div>
-                                <p className="text-2xl font-bold text-white">
+                                <p className="text-3xl font-bold text-white">
                                     <AnimatedNumber value={agencyGMV} prefix="$" />
                                 </p>
                                 <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
@@ -1184,7 +1248,7 @@
                                     </div>
                                     <span className="text-slate-400 text-sm">Est. Commission</span>
                                 </div>
-                                <p className="text-2xl font-bold text-pink-400">
+                                <p className="text-3xl font-bold text-pink-400">
                                     <AnimatedNumber value={agencyCommission} prefix="$" />
                                 </p>
                                 <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
@@ -1196,27 +1260,39 @@
                                     </div>
                                     <span className="text-slate-400 text-sm">Orders</span>
                                 </div>
-                                <p className="text-2xl font-bold text-white">
+                                <p className="text-3xl font-bold text-white">
                                     <AnimatedNumber value={agencyOrders} />
                                 </p>
                                 <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
                             </div>
-                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(16, 185, 129, 0.2)'}}>
                                 <div className="flex items-center gap-2 mb-2">
                                     <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
                                         <Icons.profit />
                                     </div>
-                                    <span className="text-slate-400 text-sm">Total Payouts</span>
+                                    <span className="text-slate-400 text-sm">Distribution Payouts</span>
                                 </div>
-                                <p className="text-2xl font-bold text-emerald-400">
-                                    <AnimatedNumber value={totalAgencyPayouts} prefix="$" decimals={2} />
+                                <p className="text-3xl font-bold text-emerald-400">
+                                    <AnimatedNumber value={totalDistributionPayouts} prefix="$" decimals={2} />
                                 </p>
-                                <p className="text-slate-600 text-xs mt-1">{agencyData.payouts.length} payments</p>
+                                <p className="text-slate-600 text-xs mt-1">{allDistPayouts.length} payments</p>
+                            </div>
+                            <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(16, 185, 129, 0.3)', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.9) 100%)'}}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                        <Icons.revenue />
+                                    </div>
+                                    <span className="text-slate-400 text-sm">Total All Payouts</span>
+                                </div>
+                                <p className="text-3xl font-bold text-emerald-400">
+                                    <AnimatedNumber value={totalAllPayouts} prefix="$" decimals={2} />
+                                </p>
+                                <p className="text-slate-600 text-xs mt-1">Distribution + Creator</p>
                             </div>
                         </div>
 
-                        {/* Agency Secondary Stats */}
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                        {/* Secondary Stats */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                             <div className="card-glow rounded-2xl p-5" style={{borderColor: 'rgba(236, 72, 153, 0.1)'}}>
                                 <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">GMV (Refunds)</p>
                                 <p className="text-xl font-bold text-red-400">${agencyRefunds.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
@@ -1229,14 +1305,18 @@
                                 <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Avg Order Value</p>
                                 <p className="text-xl font-bold text-white">${agencyOrders > 0 ? (agencyGMV / agencyOrders).toFixed(2) : '0'}</p>
                             </div>
+                            <div className="card-glow rounded-2xl p-5" style={{borderColor: 'rgba(236, 72, 153, 0.1)'}}>
+                                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Creator Payouts</p>
+                                <p className="text-xl font-bold text-slate-300">${totalCreatorPayouts.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
+                            </div>
                         </div>
 
-                        {/* Payment History */}
-                        <div className="card-glow rounded-2xl p-6 mb-6" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                        {/* Distribution Payouts Table */}
+                        <div className="card-glow rounded-2xl p-6 mb-6" style={{borderColor: 'rgba(16, 185, 129, 0.2)'}}>
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-white font-semibold flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-pink-400 to-rose-500"></span>
-                                    Payment History <span className="text-slate-500 font-normal">({agencyData.payouts.length})</span>
+                                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500"></span>
+                                    Product Distribution Payouts <span className="text-slate-500 font-normal">({allDistPayouts.length})</span>
                                 </h3>
                                 <span className="text-emerald-400 text-xs flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -1244,11 +1324,55 @@
                                 </span>
                             </div>
 
-                            {/* Payment Table */}
-                            {agencyData.payouts.length === 0 ? (
-                                <p className="text-slate-500 text-center py-8">No payment data yet</p>
+                            {allDistPayouts.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <p className="text-slate-500 mb-2">No distribution payout data yet</p>
+                                    <p className="text-slate-600 text-xs">Data will appear once the API fetches from Partner Center, or add a "Distribution Payouts" tab to your Google Sheet with columns: date, amount, type, notes</p>
+                                </div>
                             ) : (
-                                <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                                <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                                    <table className="w-full">
+                                        <thead className="sticky top-0 bg-slate-900/95 backdrop-blur">
+                                            <tr className="border-b border-white/10">
+                                                <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Date</th>
+                                                <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Type</th>
+                                                <th className="text-left py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Source</th>
+                                                <th className="text-right py-3 text-slate-500 font-medium text-xs uppercase tracking-wider">Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {allDistPayouts.map((p, i) => (
+                                                <tr key={i} className="table-row border-b border-white/5 transition-colors">
+                                                    <td className="py-3 text-white text-sm">{p.date}</td>
+                                                    <td className="py-3 text-slate-400 text-sm">{(p.type || 'distribution').replace(/_/g, ' ')}</td>
+                                                    <td className="py-3 text-sm">
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs ${p.source === 'api' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                                            {p.source === 'api' ? 'API' : 'Sheet'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 text-right text-emerald-400 font-medium text-sm">${(p.amount || 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Creator Payouts Table (smaller settlements) */}
+                        <div className="card-glow rounded-2xl p-6 mb-6" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-white font-semibold flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-pink-400 to-rose-500"></span>
+                                    Creator Settlements <span className="text-slate-500 font-normal">({agencyData.payouts.length})</span>
+                                </h3>
+                                <span className="text-slate-500 text-xs">v1 API settlements</span>
+                            </div>
+
+                            {agencyData.payouts.length === 0 ? (
+                                <p className="text-slate-500 text-center py-8">No creator settlement data yet</p>
+                            ) : (
+                                <div className="overflow-x-auto max-h-48 overflow-y-auto">
                                     <table className="w-full">
                                         <thead className="sticky top-0 bg-slate-900/95 backdrop-blur">
                                             <tr className="border-b border-white/10">
@@ -1274,16 +1398,22 @@
                         </div>
 
                         {/* Data Source Note */}
-                        <div className="bg-pink-500/5 border border-pink-500/20 rounded-xl px-4 py-2 text-slate-500 text-xs flex items-center gap-2">
-                            <Icons.tiktok />
-                            Auto-synced from TikTok Shop Partner Center — Product Distribution Service (via GitHub Actions)
-                            {agencyData.analytics.last_updated && <span className="text-pink-400 ml-auto">Last sync: {agencyData.analytics.last_updated}</span>}
+                        <div className="bg-pink-500/5 border border-pink-500/20 rounded-xl px-4 py-3 text-slate-500 text-xs space-y-1">
+                            <div className="flex items-center gap-2">
+                                <Icons.tiktok />
+                                <span>Auto-synced from TikTok Shop Partner Center — Product Distribution Service (via GitHub Actions)</span>
+                                {agencyData.analytics.last_updated && <span className="text-pink-400 ml-auto">Last sync: {agencyData.analytics.last_updated}</span>}
+                            </div>
+                            <div className="text-slate-600 pl-7">
+                                Tip: Add a "Distribution Payouts" tab to your Google Sheet (columns: date, amount, type, notes) to manually track payouts until the API is fully connected.
+                            </div>
                         </div>
                     </div>
+                    )}
 
                     {/* Footer */}
                     <div className="mt-6 text-center text-slate-600 text-xs">
-                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions • {ga4Sessions.length} GA4 records • {agencyData.payouts.length} agency payouts
+                        Auto-refreshes every 30 min • PST timezone • {sales.length} total transactions • {ga4Sessions.length} GA4 records • {allDistPayouts.length} distribution payouts • {agencyData.payouts.length} creator payouts
                     </div>
                 </div>
             </div>
