@@ -1,0 +1,16 @@
+{
+  "analytics": {
+    "last_updated": "2026-02-06",
+    "affiliate_gmv": 486223.22,
+    "est_commission": 41184.76,
+    "orders": 23077,
+    "gmv_refund": 13266.62
+  },
+  "payouts": [
+    {"payment_id": "7603622613550139150", "date": "2026-02-06", "settlement_amount": 7.67, "amount_paid": 7.67},
+    {"payment_id": "7599705435801896759", "date": "2026-02-05", "settlement_amount": 89.91, "amount_paid": 89.91},
+    {"payment_id": "7598490776595613454", "date": "2026-01-26", "settlement_amount": 10.77, "amount_paid": 10.77},
+    {"payment_id": "7599410590762813197", "date": "2026-01-26", "settlement_amount": 11.49, "amount_paid": 11.49},
+    {"payment_id": "7598361045787592503", "date": "2026-01-23", "settlement_amount": 10.77, "amount_paid": 10.77}
+  ]
+}
