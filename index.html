@@ -610,7 +610,9 @@
             });
         }, [agencyData.distribution_payouts, distributionPayouts, range, startDate, endDate, getPSTDate]);
 
-        const agencyProfitForRange = filteredDistPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const agencyGrossForRange = filteredDistPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const managerCut = agencyGrossForRange * 0.15;
+        const agencyProfitForRange = agencyGrossForRange - managerCut;
 
         // Calculate previous period sessions for comparison
         const previousPeriodSessions = useMemo(() => {
@@ -1060,7 +1062,8 @@
                             <p className="text-xl font-bold text-pink-400">
                                 ${Math.round(agencyProfitForRange).toLocaleString()}
                             </p>
-                            <p className="text-slate-600 text-xs mt-1">{filteredDistPayouts.length} payout{filteredDistPayouts.length !== 1 ? 's' : ''} this period</p>
+                            <p className="text-slate-600 text-xs mt-1">{filteredDistPayouts.length} payout{filteredDistPayouts.length !== 1 ? 's' : ''} · ${Math.round(agencyGrossForRange).toLocaleString()} gross</p>
+                            <p className="text-slate-600 text-xs">−15% mgr: ${Math.round(managerCut).toLocaleString()}</p>
                         </div>
                         <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: (profit + agencyProfitForRange) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}}>
                             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Combined Profit</p>
