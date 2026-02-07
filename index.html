@@ -579,6 +579,39 @@
 
         const totalSessions = filteredGa4Sessions.reduce((sum, s) => sum + s.sessions, 0);
 
+        // Filter distribution payouts by selected date range for Business Dashboard
+        const filteredDistPayouts = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+            const allDist = [
+                ...(agencyData.distribution_payouts || []).map(p => ({...p, amount: p.amount_paid || p.settlement_amount || 0})),
+                ...distributionPayouts.map(p => ({...p, amount: p.amount}))
+            ];
+            return allDist.filter(p => {
+                if (!p.date) return false;
+                const parts = p.date.split('-');
+                const payDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                const diffDays = Math.floor((today.getTime() - payDate.getTime()) / (1000 * 60 * 60 * 24));
+                if(range === "custom" && startDate && endDate) {
+                    const start = new Date(startDate);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59);
+                    return payDate >= start && payDate <= end;
+                }
+                switch(range) {
+                    case "today": return diffDays === 0;
+                    case "yesterday": return diffDays === 1;
+                    case "2daysago": return diffDays === 2;
+                    case "7d": return diffDays >= 0 && diffDays <= 7;
+                    case "30d": return diffDays >= 0 && diffDays <= 30;
+                    case "12m": return diffDays >= 0 && diffDays <= 365;
+                    default: return true;
+                }
+            });
+        }, [agencyData.distribution_payouts, distributionPayouts, range, startDate, endDate, getPSTDate]);
+
+        const agencyProfitForRange = filteredDistPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
+
         // Calculate previous period sessions for comparison
         const previousPeriodSessions = useMemo(() => {
             const pstNow = getPSTDate();
@@ -956,23 +989,19 @@
                                         </div>
                                     )}
                                 </div>
-                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
+                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: (profit + agencyProfitForRange) >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}}>
                                     <div className="flex items-center gap-2 mb-2">
-                                        <div className={`w-8 h-8 rounded-lg ${profit >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'} flex items-center justify-center ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <div className={`w-8 h-8 rounded-lg ${(profit + agencyProfitForRange) >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'} flex items-center justify-center ${(profit + agencyProfitForRange) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                             <Icons.profit />
                                         </div>
-                                        <span className="text-slate-400 text-sm">Profit</span>
+                                        <span className="text-slate-400 text-sm">Combined Profit</span>
                                     </div>
-                                    <p className={`text-3xl font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        <AnimatedNumber value={profit} prefix="$" />
+                                    <p className={`text-3xl font-bold ${(profit + agencyProfitForRange) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <AnimatedNumber value={profit + agencyProfitForRange} prefix="$" />
                                     </p>
-                                    {profitChangePercent !== null && (
-                                        <div className="mt-2">
-                                            <span className={`text-xs font-medium ${parseFloat(profitChangePercent) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {parseFloat(profitChangePercent) >= 0 ? '↑' : '↓'} {Math.abs(parseFloat(profitChangePercent))}% vs prev
-                                            </span>
-                                        </div>
-                                    )}
+                                    <div className="mt-2">
+                                        <span className="text-xs text-slate-500">Info + Agency</span>
+                                    </div>
                                 </div>
                                 <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300">
                                     <div className="flex items-center gap-2 mb-2">
@@ -1014,6 +1043,31 @@
                         <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
                             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Fixed Costs ({daysInRange}d)</p>
                             <p className="text-xl font-bold text-purple-400">${Math.round(fixedCostsForRange).toLocaleString()}</p>
+                        </div>
+                    </div>
+
+                    {/* Profit Breakdown: Info / Agency / Combined */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Info Profit</p>
+                            <p className={`text-xl font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                ${profit >= 0 ? '' : '-'}${Math.abs(Math.round(profit)).toLocaleString()}
+                            </p>
+                            <p className="text-slate-600 text-xs mt-1">Revenue − Expenses</p>
+                        </div>
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: 'rgba(236, 72, 153, 0.2)'}}>
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Agency Profit</p>
+                            <p className="text-xl font-bold text-pink-400">
+                                ${Math.round(agencyProfitForRange).toLocaleString()}
+                            </p>
+                            <p className="text-slate-600 text-xs mt-1">{filteredDistPayouts.length} payout{filteredDistPayouts.length !== 1 ? 's' : ''} this period</p>
+                        </div>
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: (profit + agencyProfitForRange) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}}>
+                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Combined Profit</p>
+                            <p className={`text-xl font-bold ${(profit + agencyProfitForRange) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                ${(profit + agencyProfitForRange) >= 0 ? '' : '-'}${Math.abs(Math.round(profit + agencyProfitForRange)).toLocaleString()}
+                            </p>
+                            <p className="text-slate-600 text-xs mt-1">Info + Agency</p>
                         </div>
                     </div>
 
