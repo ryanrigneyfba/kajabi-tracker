@@ -61,8 +61,9 @@ async function apiRequest(endpoint, params = {}) {
 
   const json = await resp.json();
 
-  // Detect auth failures
+  // Detect auth failures (16201010 = unauthenticated on Partner Center)
   if (json.code === 10000 || json.code === 10001 || json.code === 401 ||
+      json.code === 16201010 ||
       json.message?.toLowerCase().includes('login') ||
       json.message?.toLowerCase().includes('auth') ||
       json.message?.toLowerCase().includes('session')) {
@@ -238,6 +239,18 @@ async function main() {
     // Sort by date descending
     distPayouts.sort((a, b) => b.date.localeCompare(a.date));
     creatorPayouts.sort((a, b) => b.date.localeCompare(a.date));
+
+    // Guard: never overwrite existing data with empty results
+    const existingDistCount = (existingData.distribution_payouts || []).length;
+    const existingCreatorCount = (existingData.payouts || []).length;
+
+    if (distPayouts.length === 0 && creatorPayouts.length === 0 &&
+        (existingDistCount > 0 || existingCreatorCount > 0)) {
+      console.log(`\n⚠ API returned 0 records but existing data has ${existingDistCount} dist + ${existingCreatorCount} creator payouts.`);
+      console.log('  Preserving existing agency-data.json unchanged.');
+      console.log('  This likely means the session cookie is invalid or the API is temporarily unavailable.');
+      process.exit(0);
+    }
 
     // Build updated data
     const today = new Date().toISOString().split('T')[0];
