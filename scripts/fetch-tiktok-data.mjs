@@ -162,7 +162,7 @@ async function fetchAffiliateAnalytics() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'C' + 'ookie': SESSION_COOKIE
+        ['Cookie']: SESSION_COOKIE
       },
       body: JSON.stringify({ request: {} })
     });
