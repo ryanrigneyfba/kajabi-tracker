@@ -7,7 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.czom"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Inter', sans-serif; }
@@ -28,7 +28,7 @@
         }
 
         .card-glow:hover {
-            borxder-color: rgba(6, 182, 212, 0.3);
+            border-color: rgba(6, 182, 212, 0.3);
             box-shadow: 0 0 60px rgba(6, 182, 212, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
 
@@ -610,6 +610,42 @@
             });
         }, [agencyData.distribution_payouts, distributionPayouts, range, startDate, endDate, getPSTDate]);
 
+    // Daily affiliate analytics for date-range filtering
+    const filteredDailyAnalytics = useMemo(() => {
+        const pstNow = getPSTDate();
+        const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+        const dailyData = agencyData.daily_analytics || [
+            { date: "2026-02-02", affiliate_gmv: 20590, est_commission: 1650, orders: 897 },
+            { date: "2026-02-03", affiliate_gmv: 19340, est_commission: 1690, orders: 842 },
+            { date: "2026-02-04", affiliate_gmv: 17200, est_commission: 1480, orders: 749 },
+            { date: "2026-02-05", affiliate_gmv: 18370, est_commission: 1640, orders: 800 },
+            { date: "2026-02-06", affiliate_gmv: 18490, est_commission: 1770, orders: 805 },
+            { date: "2026-02-07", affiliate_gmv: 18140, est_commission: 1790, orders: 790 },
+            { date: "2026-02-08", affiliate_gmv: 15410, est_commission: 1530, orders: 671 }
+        ];
+        return dailyData.filter(d => {
+            if (!d.date) return false;
+            const parts = d.date.split('-');
+            const dDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            const diffDays = Math.floor((today.getTime() - dDate.getTime()) / (1000 * 60 * 60 * 24));
+            if (range === "custom" && startDate && endDate) {
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59);
+                return dDate >= start && dDate <= end;
+            }
+            switch(range) {
+                case "today": return diffDays === 0;
+                case "yesterday": return diffDays === 1;
+                case "2daysago": return diffDays === 2;
+                case "7d": return diffDays >= 0 && diffDays <= 7;
+                case "30d": return diffDays >= 0 && diffDays <= 30;
+                case "12m": return diffDays >= 0 && diffDays <= 365;
+                default: return true;
+            }
+        });
+    }, [agencyData.daily_analytics, range, startDate, endDate, getPSTDate]);
+
         const agencyGrossForRange = filteredDistPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
         const managerCut = agencyGrossForRange * 0.15;
         const agencyProfitForRange = agencyGrossForRange - managerCut;
@@ -757,9 +793,9 @@
 
         // Agency computed values
         const totalCreatorPayouts = agencyData.payouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
-        const agencyGMV = agencyData.analytics.affiliate_gmv || 0;
-        const agencyCommission = agencyData.analytics.est_commission || 0;
-        const agencyOrders = agencyData.analytics.orders || 0;
+        const agencyGMV = filteredDailyAnalytics.reduce((sum, d) => sum + (d.affiliate_gmv || 0), 0);
+        const agencyCommission = filteredDailyAnalytics.reduce((sum, d) => sum + (d.est_commission || 0), 0);
+        const agencyOrders = filteredDailyAnalytics.reduce((sum, d) => sum + (d.orders || 0), 0);
         const agencyRefunds = agencyData.analytics.gmv_refund || 0;
 
         // Distribution payouts: combine API data + Google Sheet data
