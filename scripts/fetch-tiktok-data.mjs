@@ -4,20 +4,20 @@
  * Runs via GitHub Actions to automatically fetch financial data
  * from TikTok Shop Partner Center + Affiliate Center and update agency-data.json.
  *
- * Uses the same internal endpoints as the Partner Center and Affiliate Center web UIs.
- * Authentication is via session cookies stored as GitHub Secrets.
+ * Uses the Partner Center internal API for payouts and Playwright browser
+ * scraping for affiliate analytics (GMV, commission, orders, refunds).
+ * Authentication is via session cookie stored as a GitHub Secret.
  *
  * Required GitHub Secrets:
- *   TIKTOK_SESSION_COOKIE     â Cookie from partner.us.tiktokshop.com (agency payouts)
- *   TIKTOK_AFFILIATE_COOKIE   â Cookie from affiliate-us.tiktok.com (GMV/commission/orders)
+ *   TIKTOK_SESSION_COOKIE â Cookie from partner.us.tiktokshop.com
  *
- * To get each cookie string:
- *   1. Log in to the respective site (partner center or affiliate center)
+ * To get the cookie string:
+ *   1. Log in to partner.us.tiktokshop.com
  *   2. Open DevTools (F12) â Network tab
  *   3. Reload the page
- *   4. Click any request to that domain
+ *   4. Click any request to partner.us.tiktokshop.com
  *   5. In "Request Headers", copy the full "Cookie:" value
- *   6. Paste into GitHub repo â Settings â Secrets â the corresponding secret
+ *   6. Paste into GitHub repo â Settings â Secrets â TIKTOK_SESSION_COOKIE
  *
  * When cookies expire the script detects the auth failure and
  * optionally opens a GitHub Issue to remind you to refresh them.
@@ -25,13 +25,16 @@
 
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 const SESSION_COOKIE = process.env.TIKTOK_SESSION_COOKIE || '';
-const AFFILIATE_COOKIE = process.env.TIKTOK_AFFILIATE_COOKIE || '';
 const GH_TOKEN = process.env.GITHUB_TOKEN || '';
 const GH_REPO = process.env.GITHUB_REPOSITORY || '';
 const BASE_URL = 'https://partner.us.tiktokshop.com';
-const AFFILIATE_URL = 'https://affiliate-us.tiktok.com';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Partner IDs (Stay Viral)
 const DIST_PARTNER_ID = '8650986195390075694';
@@ -140,100 +143,34 @@ function formatCreatorPayouts(rawList) {
 }
 
 // ââââââââââââââââââââââââââââââââââââââââ
-// Fetch affiliate analytics (GMV, commission, orders)
+// Fetch affiliate analytics via Playwright scraper
 // ââââââââââââââââââââââââââââââââââââââââ
 
 async function fetchAffiliateAnalytics() {
-  if (!AFFILIATE_COOKIE) {
-    console.log('\nâ  TIKTOK_AFFILIATE_COOKIE not set â skipping affiliate analytics.');
-    console.log('  Add your Affiliate Center cookie to populate GMV/commission/orders.');
-    return null;
-  }
+  console.log('\nFetching affiliate analytics (via Playwright scraper)...');
 
-  console.log('\nFetching affiliate analytics (last 28 days)...');
-
-  // Build time range: last 28 days ending yesterday, PST timezone
-  const now = new Date();
-  const end = new Date(now);
-  end.setUTCHours(0, 0, 0, 0);
-  const start = new Date(end);
-  start.setDate(start.getDate() - 28);
-
-  const startTs = Math.floor(start.getTime() / 1000);
-  const endTs = Math.floor(end.getTime() / 1000);
-
-  const body = {
-    params: [{
-      time_descriptor: {
-        timezone_offset: -28800, // PST
-        start_time: startTs,
-        end_time: endTs,
-        granularity_type: 1, // aggregated
-      },
-      // metric_types: 1=GMV, 2=items_sold, 3=refunded_gmv, 12=est_commission
-      metric_types: [1, 2, 3, 12],
-    }],
-  };
-
-  const qs = new URLSearchParams({
-    aid: '4331',
-    app_name: 'i18n_ecom_alliance',
-    shop_region: 'US',
-  }).toString();
-
-  const url = `${AFFILIATE_URL}/api/v1/oec/affiliate/compass/transaction/core_performance/get?${qs}`;
+  const scraperPath = path.join(__dirname, 'scrape-partner-analytics.mjs');
 
   try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Cookie': AFFILIATE_COOKIE,
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Referer': `${AFFILIATE_URL}/insights/transaction-analysis?shop_region=US`,
-      },
-      body: JSON.stringify(body),
+    const output = execFileSync('node', [scraperPath], {
+      env: { ...process.env, TIKTOK_SESSION_COOKIE: SESSION_COOKIE },
+      timeout: 90_000,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-    }
-
-    const json = await resp.json();
-
-    if (json.code !== 0) {
-      if (json.message?.toLowerCase().includes('login') ||
-          json.message?.toLowerCase().includes('auth') ||
-          json.code === 10000 || json.code === 10001) {
-        console.log('  â  Affiliate cookie expired â skipping analytics.');
-        return null;
-      }
-      console.log(`  â  Affiliate API error (code ${json.code}): ${json.message}`);
-      return null;
-    }
-
-    const metrics = json.data?.segments?.[0]?.time_split_metrics_list?.[0]?.metrics;
-    if (!metrics) {
-      console.log('  â  No metrics in response');
-      return null;
-    }
-
-    const result = {
-      affiliate_gmv: parseFloat(metrics.affiliate_gmv?.amount || '0'),
-      est_commission: parseFloat(metrics.estimated_commission?.amount || '0'),
-      orders: parseInt(metrics.affiliate_items_sold_cnt?.value || '0', 10),
-      gmv_refund: parseFloat(metrics.affiliate_refunded_gmv?.amount || '0'),
-    };
+    const result = JSON.parse(output.trim());
 
     console.log(`  GMV: $${result.affiliate_gmv.toLocaleString()}`);
     console.log(`  Commission: $${result.est_commission.toLocaleString()}`);
-    console.log(`  Orders: ${result.orders}`);
+    console.log(`  Orders: ${result.orders.toLocaleString()}`);
     console.log(`  Refunds: $${result.gmv_refund.toLocaleString()}`);
 
     return result;
   } catch (err) {
-    console.log(`  â  Affiliate analytics fetch failed: ${err.message}`);
+    // execFileSync throws if the child process exits non-zero
+    const stderr = err.stderr ? err.stderr.toString() : err.message;
+    console.log(`  â  Affiliate analytics scrape failed: ${stderr}`);
     return null;
   }
 }
