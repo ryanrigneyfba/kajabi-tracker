@@ -1280,7 +1280,22 @@
                             <div className="flex items-center gap-2 px-4 py-2 bg-pink-500/10 border border-pink-500/30 rounded-xl">
                                 <Icons.tiktok />
                                 <span className="text-pink-400 font-semibold text-sm">Agency Earnings — TikTok Partner Center</span>
-                            </div>
+                    </div>
+                    {/* Agency Date Range Buttons */}
+                    <div className="flex flex-wrap gap-2 justify-center mb-2">
+                        {ranges.map(r => (
+                            <button key={r.key} onClick={() => { setRange(r.key); if(r.key === 'custom') {} }} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${range === r.key ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg shadow-pink-500/25' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/50 hover:text-slate-300 border border-slate-700/50'}`}>
+                                {r.label}
+                            </button>
+                        ))}
+                    </div>
+                    {range === 'custom' && (
+                        <div className="flex gap-3 justify-center mb-4">
+                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm" />
+                            <span className="text-slate-400 self-center">to</span>
+                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm" />
+                        </div>
+                    )
                             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent"></div>
                         </div>
 
@@ -1296,7 +1311,7 @@
                                 <p className="text-3xl font-bold text-white">
                                     <AnimatedNumber value={agencyGMV} prefix="$" />
                                 </p>
-                                <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
+                                <p className="text-slate-600 text-xs mt-1">{`${range === "today" ? "Today" : range === "yesterday" ? "Yesterday" : range === "2daysago" ? "2 Days Ago" : range === "7d" ? "Last 7 Days" : range === "30d" ? "Last 30 Days" : range === "12m" ? "Last 12 Months" : range === "custom" ? "Custom Range" : "All Time"}`}</p>
                             </div>
                             <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
                                 <div className="flex items-center gap-2 mb-2">
@@ -1308,7 +1323,7 @@
                                 <p className="text-3xl font-bold text-pink-400">
                                     <AnimatedNumber value={agencyCommission} prefix="$" />
                                 </p>
-                                <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
+                                <p className="text-slate-600 text-xs mt-1">{`${range === "today" ? "Today" : range === "yesterday" ? "Yesterday" : range === "2daysago" ? "2 Days Ago" : range === "7d" ? "Last 7 Days" : range === "30d" ? "Last 30 Days" : range === "12m" ? "Last 12 Months" : range === "custom" ? "Custom Range" : "All Time"}`}</p>
                             </div>
                             <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(236, 72, 153, 0.15)'}}>
                                 <div className="flex items-center gap-2 mb-2">
@@ -1320,7 +1335,7 @@
                                 <p className="text-3xl font-bold text-white">
                                     <AnimatedNumber value={agencyOrders} />
                                 </p>
-                                <p className="text-slate-600 text-xs mt-1">Last 28 days</p>
+                                <p className="text-slate-600 text-xs mt-1">{`${range === "today" ? "Today" : range === "yesterday" ? "Yesterday" : range === "2daysago" ? "2 Days Ago" : range === "7d" ? "Last 7 Days" : range === "30d" ? "Last 30 Days" : range === "12m" ? "Last 12 Months" : range === "custom" ? "Custom Range" : "All Time"}`}</p>
                             </div>
                             <div className="fade-in card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: 'rgba(16, 185, 129, 0.2)'}}>
                                 <div className="flex items-center gap-2 mb-2">
