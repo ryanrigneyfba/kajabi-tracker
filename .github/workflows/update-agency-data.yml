@@ -25,6 +25,7 @@ jobs:
       - name: Fetch TikTok Shop data
         env:
           TIKTOK_SESSION_COOKIE: ${{ secrets.TIKTOK_SESSION_COOKIE }}
+          TIKTOK_AFFILIATE_COOKIE: ${{ secrets.TIKTOK_AFFILIATE_COOKIE }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/fetch-tiktok-data.mjs
 
