@@ -610,6 +610,33 @@
             });
         }, [agencyData.distribution_payouts, distributionPayouts, range, startDate, endDate, getPSTDate]);
 
+        // Filter creator payouts by selected date range
+        const filteredCreatorPayouts = useMemo(() => {
+            const pstNow = getPSTDate();
+            const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+            return (agencyData.payouts || []).filter(p => {
+                if (!p.date) return false;
+                const parts = p.date.split('-');
+                const payDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                const diffDays = Math.floor((today.getTime() - payDate.getTime()) / (1000 * 60 * 60 * 24));
+                if(range === "custom" && startDate && endDate) {
+                    const start = new Date(startDate);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59);
+                    return payDate >= start && payDate <= end;
+                }
+                switch(range) {
+                    case "today": return diffDays === 0;
+                    case "yesterday": return diffDays === 1;
+                    case "2daysago": return diffDays === 2;
+                    case "7d": return diffDays >= 0 && diffDays <= 7;
+                    case "30d": return diffDays >= 0 && diffDays <= 30;
+                    case "12m": return diffDays >= 0 && diffDays <= 365;
+                    default: return true;
+                }
+            });
+        }, [agencyData.payouts, range, startDate, endDate, getPSTDate]);
+
     // Daily affiliate analytics for date-range filtering
     const filteredDailyAnalytics = useMemo(() => {
         const pstNow = getPSTDate();
@@ -792,21 +819,18 @@
             : null;
 
         // Agency computed values
-        const totalCreatorPayouts = agencyData.payouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
+        const totalCreatorPayouts = filteredCreatorPayouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
         const agencyGMV = filteredDailyAnalytics.reduce((sum, d) => sum + (d.affiliate_gmv || 0), 0);
         const agencyCommission = filteredDailyAnalytics.reduce((sum, d) => sum + (d.est_commission || 0), 0);
         const agencyOrders = filteredDailyAnalytics.reduce((sum, d) => sum + (d.orders || 0), 0);
         const agencyRefunds = agencyData.analytics.gmv_refund || 0;
 
-        // Distribution payouts: combine API data + Google Sheet data
-        const apiDistPayouts = agencyData.distribution_payouts || [];
-        const totalApiDistPayouts = apiDistPayouts.reduce((sum, p) => sum + (p.amount_paid || p.settlement_amount || 0), 0);
-        const totalSheetDistPayouts = distributionPayouts.reduce((sum, p) => sum + p.amount, 0);
-        const totalDistributionPayouts = totalApiDistPayouts + totalSheetDistPayouts;
-        const allDistPayouts = [
-            ...apiDistPayouts.map(p => ({...p, source: 'api', amount: p.amount_paid || p.settlement_amount || 0})),
-            ...distributionPayouts.map(p => ({...p, source: 'sheet', statement_id: '', amount: p.amount}))
-        ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        // Distribution payouts: use date-filtered data
+        const totalDistributionPayouts = filteredDistPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const allDistPayouts = filteredDistPayouts.map(p => ({
+            ...p,
+            source: p.statement_id ? 'api' : 'sheet'
+        })).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         const totalAllPayouts = totalDistributionPayouts + totalCreatorPayouts;
 
         const chartData = useMemo(() => {
