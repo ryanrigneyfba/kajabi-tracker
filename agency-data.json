@@ -1,12 +1,30 @@
 {
   "analytics": {
-    "last_updated": "2026-02-09",
+    "last_updated": "2026-02-10",
     "affiliate_gmv": 142196.05,
     "est_commission": 12702.66,
     "orders": 6284,
     "gmv_refund": 3860.48
   },
   "payouts": [
+    {
+      "payment_id": "7604686661780326158",
+      "date": "2026-02-09",
+      "settlement_amount": 2.71,
+      "amount_paid": 2.71
+    },
+    {
+      "payment_id": "7603847850828711693",
+      "date": "2026-02-09",
+      "settlement_amount": 5.86,
+      "amount_paid": 5.86
+    },
+    {
+      "payment_id": "7604059258829637390",
+      "date": "2026-02-09",
+      "settlement_amount": 7.21,
+      "amount_paid": 7.21
+    },
     {
       "payment_id": "7603622613550139150",
       "date": "2026-02-06",
@@ -2175,6 +2193,30 @@
     }
   ],
   "distribution_payouts": [
+    {
+      "statement_id": "7604048873067595533",
+      "date": "2026-02-09",
+      "settlement_amount": 1201.5,
+      "amount_paid": 1201.5,
+      "type": "PRODUCT_DISTRIBUTION",
+      "currency": "USD"
+    },
+    {
+      "statement_id": "7604755584060376845",
+      "date": "2026-02-09",
+      "settlement_amount": 287.9,
+      "amount_paid": 287.9,
+      "type": "PRODUCT_DISTRIBUTION",
+      "currency": "USD"
+    },
+    {
+      "statement_id": "7604420842235102989",
+      "date": "2026-02-09",
+      "settlement_amount": 972.75,
+      "amount_paid": 972.75,
+      "type": "PRODUCT_DISTRIBUTION",
+      "currency": "USD"
+    },
     {
       "statement_id": "7603678518044509965",
       "date": "2026-02-06",
