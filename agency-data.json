@@ -8,6 +8,12 @@
   },
   "payouts": [
     {
+      "payment_id": "7611392382455629581",
+      "date": "2026-02-27",
+      "settlement_amount": 11.24,
+      "amount_paid": 11.24
+    },
+    {
       "payment_id": "7611036587405018893",
       "date": "2026-02-26",
       "settlement_amount": 12.03,
@@ -2295,6 +2301,14 @@
     }
   ],
   "distribution_payouts": [
+    {
+      "statement_id": "7611471024655419149",
+      "date": "2026-02-27",
+      "settlement_amount": 1513.48,
+      "amount_paid": 1513.48,
+      "type": "PRODUCT_DISTRIBUTION",
+      "currency": "USD"
+    },
     {
       "statement_id": "7611099935811159822",
       "date": "2026-02-26",
