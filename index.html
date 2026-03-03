@@ -443,7 +443,7 @@
                 }
                 const processedWhop = (Array.isArray(whopData) ? whopData : []).map((p, idx) => ({
                     id: p.id || `whop-${idx}`,
-                    date: p.paid_at ? p.paid_at.split('T')[0] : (p.created_at ? p.created_at.split('T')[0] : ''),
+                    date: p.paid_at ? String(p.paid_at).split('T')[0] : (p.created_at ? String(p.created_at).split('T')[0] : ''),
                     amount: (parseFloat(p.final_amount || p.subtotal || p.amount || 0)) / 100, // Whop amounts are in cents
                     status: p.status || 'unknown',
                     product: p.product?.title || p.product_id || '',
