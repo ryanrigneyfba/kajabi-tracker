@@ -14,7 +14,7 @@
 
         /* Grid background pattern */
         .grid-bg {
-            background-image:
+            background-image
                 linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
             background-size: 60px 60px;
@@ -1174,7 +1174,7 @@
                     </div>
 
                     {/* Profit Breakdown: Info / Agency / Whop / Combined */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                         <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5">
                             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Info Profit</p>
                             <p className={`text-xl font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1190,6 +1190,13 @@
                             <p className="text-slate-600 text-xs mt-1">{filteredDistPayouts.length} payout{filteredDistPayouts.length !== 1 ? 's' : ''} Â· ${Math.round(agencyGrossForRange).toLocaleString()} gross</p>
                             <p className="text-slate-600 text-xs">â15% mgr: ${Math.round(managerCut).toLocaleString()}</p>
                         </div>
+                                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: 'rgba(6, 182, 212, 0.3)'}}>
+                                                                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Kajabi Revenue</p>
+                                                                <p className="text-xl font-bold text-cyan-400">
+                                                                                            ${Math.round(totalRevenue).toLocaleString()}
+                                                                </p>
+                                                                    <p className="text-slate-600 text-xs mt-1">{filteredSales.length} sale{filteredSales.length !== 1 ? 's' : ''}</p>
+                                        </div>
                         <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: 'rgba(139, 92, 246, 0.2)'}}>
                             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Whop Revenue</p>
                             <p className="text-xl font-bold text-purple-400">
