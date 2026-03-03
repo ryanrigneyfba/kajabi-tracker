@@ -1,0 +1,65 @@
+name: Fetch Whop Payments
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-payments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch Whop payments
+        env:
+          WHOP_API_KEY: ${{ secrets.WHOP_API_KEY }}
+        run: |
+          ALL_PAYMENTS="[]"
+          PAGE=1
+          while true; do
+            RESPONSE=$(curl -s -f \
+              -H "Authorization: Bearer $WHOP_API_KEY" \
+              "https://api.whop.com/api/v5/company/payments?per=50&page=$PAGE")
+            
+            if [ $? -ne 0 ]; then
+              echo "API request failed on page $PAGE"
+              break
+            fi
+            
+            COUNT=$(echo "$RESPONSE" | jq '. | length')
+            
+            if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
+              break
+            fi
+            
+            ALL_PAYMENTS=$(echo "$ALL_PAYMENTS" "$RESPONSE" | jq -s '.[0] + .[1]')
+            echo "Fetched page $PAGE - got $COUNT payments"
+            
+            if [ "$COUNT" -lt 50 ]; then
+              break
+            fi
+            
+            PAGE=$((PAGE + 1))
+            sleep 1
+          done
+          
+          TOTAL=$(echo "$ALL_PAYMENTS" | jq '. | length')
+          echo "Total payments fetched: $TOTAL"
+          echo "$ALL_PAYMENTS" | jq '.' > whop-payments.json
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add whop-payments.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update Whop payments data"
+            git push
+          fi
