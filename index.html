@@ -9,7 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
+    <sty
         * { font-family: 'Inter', sans-serif; }
 
         /* Grid background pattern */
@@ -134,7 +134,7 @@
     const FIXED_COSTS_SHEET_ID = "1qb2IIRUTta5ywuTqLLX-2GmLCmtzf7-1cyt0jhStd8U";
     const FIXED_COSTS_URL = `https://docs.google.com/spreadsheets/d/${FIXED_COSTS_SHEET_ID}/gviz/tq?tqx=out:csv&gid=266077976`;
     const GA4_SESSIONS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=240030115`;
-    const REFRESH_INTERVAL = 30 * 60 * 1000;
+    const REFRESH_INTERVAL = 15 * 60 * 1000;
     const AGENCY_DATA_URL = "https://raw.githubusercontent.com/ryanrigneyfba/kajabi-tracker/main/agency-data.json";
     // Distribution payouts from Google Sheet (fallback/supplement for API data)
     // Add a tab called "Distribution Payouts" in your spreadsheet with columns: date, amount, type, notes
@@ -441,7 +441,7 @@
                         }
                     } catch(e) { console.warn("Whop API error (CORS may block client-side):", e); }
                 }
-                const processedWhop = (Array.isArray(whopData) ? whopData : []).filter(p => (p.status === 'paid' || p.status === 'open') && p.final_amount > 0).map((p, idx) => ({
+                const processedWhop = (Array.isArray(whopData) ? whopData : []).filter(p => p.status === 'paid' && p.final_amount > 0).map((p, idx) => ({
                     id: p.id || `whop-${idx}`,
                     date: (() => { const ts = p.paid_at || p.created_at; if (!ts) return ''; if (typeof ts === 'number') return new Date(ts * 1000).toISOString().split('T')[0]; return String(ts).split('T')[0]; })(),
                     amount: (parseFloat(p.final_amount || p.subtotal || p.amount || 0)), // Whop amounts are in dollars
