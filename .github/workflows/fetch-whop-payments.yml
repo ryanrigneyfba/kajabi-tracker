@@ -31,14 +31,28 @@ jobs:
               break
             fi
             
-            COUNT=$(echo "$RESPONSE" | jq '. | length')
+            # Extract data array from paginated response object
+            PAGE_DATA=$(echo "$RESPONSE" | jq '.data // empty')
             
-            if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
+            if [ -z "$PAGE_DATA" ] || [ "$PAGE_DATA" = "null" ]; then
+              echo "No data field in response, trying raw array"
+              PAGE_DATA=$(echo "$RESPONSE" | jq '. // empty')
+            fi
+            
+            COUNT=$(echo "$PAGE_DATA" | jq '. | length')
+            
+            if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ] || [ -z "$COUNT" ]; then
               break
             fi
             
-            ALL_PAYMENTS=$(echo "$ALL_PAYMENTS" "$RESPONSE" | jq -s '.[0] + .[1]')
+            ALL_PAYMENTS=$(echo "$ALL_PAYMENTS" "$PAGE_DATA" | jq -s '.[0] + .[1]')
             echo "Fetched page $PAGE - got $COUNT payments"
+            
+            # Check if there are more pages
+            HAS_MORE=$(echo "$RESPONSE" | jq '.pagination.next_page // empty')
+            if [ -z "$HAS_MORE" ] || [ "$HAS_MORE" = "null" ]; then
+              break
+            fi
             
             if [ "$COUNT" -lt 50 ]; then
               break
