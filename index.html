@@ -1067,10 +1067,10 @@
                                         <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400">
                                             <Icons.revenue />
                                         </div>
-                                        <span className="text-slate-400 text-sm">Kajabi Revenue</span>
+                                        <span className="text-slate-400 text-sm">Combined Revenue</span>
                                     </div>
                                     <p className="text-3xl font-bold text-white">
-                                        <AnimatedNumber value={totalRevenue} prefix="$" />
+                                        <AnimatedNumber value={totalRevenue + whopRevenue + agencyGrossForRange} prefix="$" />
                                     </p>
                                     {revenueChangePercent !== null && (
                                         <div className="mt-2">
