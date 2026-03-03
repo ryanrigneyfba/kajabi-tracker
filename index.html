@@ -767,7 +767,7 @@
         const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
         const affiliateCommission = totalRevenue * 0.05;
         const commissionableSales = filteredSales.filter(s => s.revenue > 999);
-        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
+        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.20), 0);
         const totalCommissions = affiliateCommission + salesTeamCommission;
         const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange;
         const profit = totalRevenue - totalExpenses;
@@ -800,7 +800,7 @@
             const diffDays = Math.floor((today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
             return diffDays >= prevPeriodStart && diffDays <= prevPeriodEnd && s.revenue > 999;
         });
-        const prevSalesTeamComm = prevCommissionableSales.reduce((sum, s) => sum + (s.revenue * 0.175), 0);
+        const prevSalesTeamComm = prevCommissionableSales.reduce((sum, s) => sum + (s.revenue * 0.20), 0);
         const prevTotalExpenses = prevAffiliateComm + prevSalesTeamComm + fixedCostsForRange;
         const prevProfit = previousPeriodData.revenue - prevTotalExpenses;
 
@@ -1203,7 +1203,7 @@
                                 <p className="text-lg font-semibold text-orange-400">${affiliateCommission.toFixed(2)}</p>
                             </div>
                             <div className="bg-white/5 rounded-xl p-4">
-                                <p className="text-slate-500 text-xs mb-1">Sales Team (17.5%)</p>
+                                <p className="text-slate-500 text-xs mb-1">Sales Team (20%)</p>
                                 <p className="text-lg font-semibold text-orange-400">${salesTeamCommission.toFixed(2)}</p>
                             </div>
                             <div className="bg-white/5 rounded-xl p-4">
@@ -1321,7 +1321,7 @@
                                                 <td className="py-3 text-slate-300 text-sm max-w-[200px] truncate">{s.offer}</td>
                                                 <td className="py-3 text-right text-emerald-400 font-medium text-sm">${s.revenue.toLocaleString()}</td>
                                                 <td className="py-3 text-right text-orange-400 text-sm">${(s.revenue * 0.05).toFixed(2)}</td>
-                                                <td className="py-3 text-right text-orange-400 text-sm">{s.revenue > 999 ? `$${(s.revenue * 0.175).toFixed(2)}` : 'â'}</td>
+                                                <td className="py-3 text-right text-orange-400 text-sm">{s.revenue > 999 ? `$${(s.revenue * 0.20).toFixed(2)}` : 'â'}</td>
                                             </tr>
                                         ))}
                                     </tbody>
