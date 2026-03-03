@@ -441,7 +441,7 @@
                         }
                     } catch(e) { console.warn("Whop API error (CORS may block client-side):", e); }
                 }
-                const processedWhop = (Array.isArray(whopData) ? whopData : []).filter(p => p.status === 'paid' && p.paid_at).map((p, idx) => ({
+                const processedWhop = (Array.isArray(whopData) ? whopData : []).filter(p => (p.status === 'paid' || p.status === 'open') && p.final_amount > 0).map((p, idx) => ({
                     id: p.id || `whop-${idx}`,
                     date: (() => { const ts = p.paid_at || p.created_at; if (!ts) return ''; if (typeof ts === 'number') return new Date(ts * 1000).toISOString().split('T')[0]; return String(ts).split('T')[0]; })(),
                     amount: (parseFloat(p.final_amount || p.subtotal || p.amount || 0)) / 100, // Whop amounts are in cents
@@ -450,7 +450,7 @@
                     user: p.user?.username || p.user?.email || p.user_id || '',
                     currency: p.currency || 'usd',
                     refunded: parseFloat(p.refunded_amount || 0) / 100
-                })).filter(p => p.date && p.amount > 0 && p.status === 'paid');
+                })).filter(p => p.date && p.amount > 0);
                 setWhopPayments(processedWhop);
 
                 setLastSync(new Date().toLocaleTimeString());
