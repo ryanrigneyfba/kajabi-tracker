@@ -1,5 +1,5 @@
 /**
- * TikTok Shop â Agency Data & Affiliate Analytics Fetcher
+ * TikTok Shop — Agency Data & Affiliate Analytics Fetcher
  *
  * Runs via GitHub Actions to automatically fetch financial data
  * from TikTok Shop Partner Center + Affiliate Center and update agency-data.json.
@@ -9,15 +9,15 @@
  * Authentication is via session cookie stored as a GitHub Secret.
  *
  * Required GitHub Secrets:
- *   TIKTOK_SESSION_COOKIE â Cookie from partner.us.tiktokshop.com
+ *   TIKTOK_SESSION_COOKIE — Cookie from partner.us.tiktokshop.com
  *
  * To get the cookie string:
  *   1. Log in to partner.us.tiktokshop.com
- *   2. Open DevTools (F12) â Network tab
+ *   2. Open DevTools (F12) → Network tab
  *   3. Reload the page
  *   4. Click any request to partner.us.tiktokshop.com
  *   5. In "Request Headers", copy the full "Cookie:" value
- *   6. Paste into GitHub repo â Settings â Secrets â TIKTOK_SESSION_COOKIE
+ *   6. Paste into GitHub repo → Settings → Secrets → TIKTOK_SESSION_COOKIE
  *
  * When cookies expire the script detects the auth failure and
  * optionally opens a GitHub Issue to remind you to refresh them.
@@ -35,15 +35,15 @@ const BASE_URL = 'https://partner.us.tiktokshop.com';
 const DIST_PARTNER_ID = '8650986195390075694';
 const CREATOR_PARTNER_ID = '8647379727644267307';
 
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 // API helpers
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 
 async function apiRequest(endpoint, params = {}) {
   const qs = new URLSearchParams({ user_language: 'en', ...params }).toString();
   const url = `${BASE_URL}${endpoint}?${qs}`;
 
-  console.log(`  â GET ${endpoint} (page ${params.page || 1})`);
+  console.log(`  → GET ${endpoint} (page ${params.page || 1})`);
 
   const resp = await fetch(url, {
     method: 'GET',
@@ -73,9 +73,9 @@ async function apiRequest(endpoint, params = {}) {
   return json;
 }
 
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 // Fetch all pages of payouts
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 
 async function fetchAllPayouts(partnerId, label) {
   console.log(`\nFetching ${label} payouts...`);
@@ -93,7 +93,7 @@ async function fetchAllPayouts(partnerId, label) {
 
     if (data.code !== 0 || !data.data?.payout_info) {
       if (page === 1) {
-        console.log(`  â  No payout data returned (code: ${data.code}, msg: ${data.message || 'none'})`);
+        console.log(`  ⚠ No payout data returned (code: ${data.code}, msg: ${data.message || 'none'})`);
       }
       break;
     }
@@ -108,9 +108,9 @@ async function fetchAllPayouts(partnerId, label) {
   return allPayouts;
 }
 
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 // Format raw payouts
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 
 function formatPayout(raw) {
   const d = new Date(parseInt(raw.payment_time));
@@ -137,15 +137,38 @@ function formatCreatorPayouts(rawList) {
   }));
 }
 
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
+// Merge payouts (accumulate, never lose data)
+// ————————————————————————————————————————
+
+/**
+ * Merge fresh API payouts with existing stored payouts.
+ * The TikTok API sometimes returns inconsistent/partial results,
+ * so we keep a superset of all payouts ever seen, deduplicating by ID.
+ * Fresh data wins when the same ID appears in both sets.
+ */
+function mergePayouts(existing, fresh, idField) {
+  const byId = new Map();
+  for (const p of existing) {
+    const id = p[idField];
+    if (id) byId.set(id, p);
+  }
+  for (const p of fresh) {
+    const id = p[idField];
+    if (id) byId.set(id, p);
+  }
+  return Array.from(byId.values());
+}
+
+// ————————————————————————————————————————
 // Fetch affiliate analytics via Playwright scraper
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 
 async function fetchAffiliateAnalytics() {
   console.log('\nFetching affiliate analytics from Partner Center...');
   const PARTNER_ID = '7495508276819495805';
   const BASE_URL = 'https://partner.us.tiktokshop.com';
-  
+
   // Latest known values scraped from Partner Center (Feb 2026, last 7 days)
   // These serve as a baseline when the API cannot return live data
   const FALLBACK_METRICS = {
@@ -154,7 +177,7 @@ async function fetchAffiliateAnalytics() {
     orders: 6284,
     gmv_refund: 3860.48
   };
-  
+
   try {
     // Try the Partner Center general stats API
     const statsUrl = BASE_URL + '/api/v2/insights/partner/general/stats?partner_id=' + PARTNER_ID + '&region_code=US&biz_role=7';
@@ -166,10 +189,10 @@ async function fetchAffiliateAnalytics() {
       },
       body: JSON.stringify({ request: {} })
     });
-    
+
     const statsData = await statsResp.json();
     console.log('  Stats API response code:', statsData.code);
-    
+
     if (statsData.code === 0 && statsData.data && Object.keys(statsData.data).length > 0) {
       console.log('  Got live analytics data from API');
       return {
@@ -179,7 +202,7 @@ async function fetchAffiliateAnalytics() {
         gmv_refund: statsData.data.refund || 0
       };
     }
-    
+
     // API returned empty data (requires request signing we can't replicate in CI)
     // Use fallback metrics so dashboard isn't empty
     console.log('  Stats API returned empty. Using fallback metrics.');
@@ -190,9 +213,9 @@ async function fetchAffiliateAnalytics() {
   }
 }
 
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 // GitHub Issue for expired cookies
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 
 async function createExpiryIssue(errorMsg) {
   if (!GH_TOKEN || !GH_REPO) {
@@ -222,7 +245,7 @@ async function createExpiryIssue(errorMsg) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        title: 'ð TikTok session cookie expired â refresh needed',
+        title: '🔑 TikTok session cookie expired — refresh needed',
         body: [
           '## Cookie Refresh Required',
           '',
@@ -232,11 +255,11 @@ async function createExpiryIssue(errorMsg) {
           '',
           '### How to fix',
           '1. Log in to [partner.us.tiktokshop.com](https://partner.us.tiktokshop.com)',
-          '2. Open DevTools (F12) â **Network** tab',
+          '2. Open DevTools (F12) → **Network** tab',
           '3. Reload the page',
           '4. Click any request to `partner.us.tiktokshop.com`',
           '5. In **Request Headers**, copy the full `Cookie:` value',
-          '6. Go to this repo â **Settings** â **Secrets and variables** â **Actions**',
+          '6. Go to this repo → **Settings** → **Secrets and variables** → **Actions**',
           '7. Update the `TIKTOK_SESSION_COOKIE` secret with the new cookie value',
           '',
           'The next scheduled run (every 6h) will pick up the new cookie automatically.',
@@ -252,9 +275,9 @@ async function createExpiryIssue(errorMsg) {
   }
 }
 
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 // Main
-// ââââââââââââââââââââââââââââââââââââââââ
+// ————————————————————————————————————————
 
 async function main() {
   console.log('=== TikTok Agency Data Fetcher (Internal API) ===');
@@ -289,29 +312,38 @@ async function main() {
     const rawCreator = await fetchAllPayouts(CREATOR_PARTNER_ID, 'creator');
     const creatorPayouts = formatCreatorPayouts(rawCreator);
 
-    // Sort by date descending
-    distPayouts.sort((a, b) => b.date.localeCompare(a.date));
-    creatorPayouts.sort((a, b) => b.date.localeCompare(a.date));
-
     // Guard: never overwrite existing data with empty results
     const existingDistCount = (existingData.distribution_payouts || []).length;
     const existingCreatorCount = (existingData.payouts || []).length;
 
     if (distPayouts.length === 0 && creatorPayouts.length === 0 &&
         (existingDistCount > 0 || existingCreatorCount > 0)) {
-      console.log(`\nâ  API returned 0 records but existing data has ${existingDistCount} dist + ${existingCreatorCount} creator payouts.`);
+      console.log(`\n⚠ API returned 0 records but existing data has ${existingDistCount} dist + ${existingCreatorCount} creator payouts.`);
       console.log('  Preserving existing agency-data.json unchanged.');
       console.log('  This likely means the session cookie is invalid or the API is temporarily unavailable.');
       process.exit(0);
     }
 
-    // Fetch affiliate analytics (GMV, commission, orders) â independent of payouts
+    // Merge fresh API data with existing stored data.
+    // The TikTok API inconsistently returns partial/stale results across runs,
+    // so we accumulate payouts over time and never lose previously fetched entries.
+    const mergedDist = mergePayouts(existingData.distribution_payouts || [], distPayouts, 'statement_id');
+    const mergedCreator = mergePayouts(existingData.payouts || [], creatorPayouts, 'payment_id');
+
+    // Sort by date descending
+    mergedDist.sort((a, b) => b.date.localeCompare(a.date));
+    mergedCreator.sort((a, b) => b.date.localeCompare(a.date));
+
+    console.log(`\n  Merged distribution: ${existingDistCount} existing + ${distPayouts.length} fresh = ${mergedDist.length} unique`);
+    console.log(`  Merged creator:      ${existingCreatorCount} existing + ${creatorPayouts.length} fresh = ${mergedCreator.length} unique`);
+
+    // Fetch affiliate analytics (GMV, commission, orders) — independent of payouts
     const affiliateMetrics = await fetchAffiliateAnalytics();
 
     // Build updated data
     const today = new Date().toISOString().split('T')[0];
-    const totalDist = distPayouts.reduce((s, p) => s + p.settlement_amount, 0);
-    const totalCreator = creatorPayouts.reduce((s, p) => s + p.settlement_amount, 0);
+    const totalDist = mergedDist.reduce((s, p) => s + p.settlement_amount, 0);
+    const totalCreator = mergedCreator.reduce((s, p) => s + p.settlement_amount, 0);
 
     const updatedData = {
       analytics: {
@@ -319,27 +351,27 @@ async function main() {
         ...(affiliateMetrics || {}),
         last_updated: today,
       },
-      payouts: creatorPayouts,
-      distribution_payouts: distPayouts,
+      payouts: mergedCreator,
+      distribution_payouts: mergedDist,
     };
 
     fs.writeFileSync(dataPath, JSON.stringify(updatedData, null, 2) + '\n');
 
     console.log(`\n=== Updated agency-data.json ===`);
-    console.log(`  Distribution payouts: ${distPayouts.length} ($${totalDist.toLocaleString()})`);
-    console.log(`  Creator payouts:      ${creatorPayouts.length} ($${totalCreator.toLocaleString()})`);
-    console.log(`  Latest distribution:  ${distPayouts[0]?.date || 'n/a'}`);
-    console.log(`  Latest creator:       ${creatorPayouts[0]?.date || 'n/a'}`);
+    console.log(`  Distribution payouts: ${mergedDist.length} ($${totalDist.toLocaleString()})`);
+    console.log(`  Creator payouts:      ${mergedCreator.length} ($${totalCreator.toLocaleString()})`);
+    console.log(`  Latest distribution:  ${mergedDist[0]?.date || 'n/a'}`);
+    console.log(`  Latest creator:       ${mergedCreator[0]?.date || 'n/a'}`);
     console.log('=== Done ===');
 
   } catch (err) {
     if (err.message.startsWith('AUTH_EXPIRED')) {
-      console.error('\nâ Session cookie has expired!');
+      console.error('\n✖ Session cookie has expired!');
       console.error(err.message);
       console.log('\nCreating GitHub Issue to remind you to refresh...');
       await createExpiryIssue(err.message);
     } else {
-      console.error('\nâ Unexpected error:', err.message);
+      console.error('\n✖ Unexpected error:', err.message);
     }
 
     console.log('Keeping existing agency-data.json unchanged.');
