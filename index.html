@@ -702,14 +702,11 @@
     const filteredDailyAnalytics = useMemo(() => {
         const pstNow = getPSTDate();
         const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate());
+        // When daily_analytics isn't available, synthesize a "today" entry
+        // from the top-level analytics so KPI cards always show current data
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
         const dailyData = agencyData.daily_analytics || [
-            { date: "2026-02-02", affiliate_gmv: 20590, est_commission: 1650, orders: 897 },
-            { date: "2026-02-03", affiliate_gmv: 19340, est_commission: 1690, orders: 842 },
-            { date: "2026-02-04", affiliate_gmv: 17200, est_commission: 1480, orders: 749 },
-            { date: "2026-02-05", affiliate_gmv: 18370, est_commission: 1640, orders: 800 },
-            { date: "2026-02-06", affiliate_gmv: 18490, est_commission: 1770, orders: 805 },
-            { date: "2026-02-07", affiliate_gmv: 18140, est_commission: 1790, orders: 790 },
-            { date: "2026-02-08", affiliate_gmv: 15410, est_commission: 1530, orders: 671 }
+            { date: todayStr, affiliate_gmv: agencyData.analytics.affiliate_gmv || 0, est_commission: agencyData.analytics.est_commission || 0, orders: agencyData.analytics.orders || 0 }
         ];
         return dailyData.filter(d => {
             if (!d.date) return false;
