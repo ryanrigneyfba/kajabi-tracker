@@ -15,56 +15,131 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Fetch Whop payments
+      - name: Fetch and merge Whop payments
         env:
           WHOP_API_KEY: ${{ secrets.WHOP_API_KEY }}
         run: |
+          set -e
+
+          echo "=== Whop Payment Fetcher ==="
+          echo "Timestamp: $(date -u)"
+
+          # Verify API key is set
+          if [ -z "$WHOP_API_KEY" ]; then
+            echo "ERROR: WHOP_API_KEY secret not set"
+            exit 0
+          fi
+
+          # Test API connectivity first
+          echo "Testing API connectivity..."
+          TEST_RESP=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -H "Authorization: Bearer $WHOP_API_KEY" \
+            "https://api.whop.com/api/v5/company/payments?per=1")
+          HTTP_CODE=$(echo "$TEST_RESP" | grep "HTTP_CODE:" | cut -d: -f2)
+          echo "API response code: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: API returned $HTTP_CODE. API key may be expired."
+            echo "Response: $(echo "$TEST_RESP" | head -5)"
+            echo "Keeping existing whop-payments.json unchanged."
+            exit 0
+          fi
+
+          # Fetch all pages
           ALL_PAYMENTS="[]"
           PAGE=1
-          while true; do
+          MAX_PAGES=500
+          TOTAL_FETCHED=0
+          while [ $PAGE -le $MAX_PAGES ]; do
             RESPONSE=$(curl -s -f \
               -H "Authorization: Bearer $WHOP_API_KEY" \
-              "https://api.whop.com/api/v5/company/payments?per=50&page=$PAGE")
-            
-            if [ $? -ne 0 ]; then
-              echo "API request failed on page $PAGE"
+              "https://api.whop.com/api/v5/company/payments?per=50&page=$PAGE") || {
+              echo "API request failed on page $PAGE after fetching $TOTAL_FETCHED records"
               break
-            fi
-            
-            # Extract data array from paginated response object
+            }
+
+            # Extract data array
             PAGE_DATA=$(echo "$RESPONSE" | jq '.data // empty')
-            
+
             if [ -z "$PAGE_DATA" ] || [ "$PAGE_DATA" = "null" ]; then
-              echo "No data field in response, trying raw array"
-              PAGE_DATA=$(echo "$RESPONSE" | jq '. // empty')
+              PAGE_DATA=$(echo "$RESPONSE" | jq 'if type == "array" then . else empty end')
             fi
-            
-            COUNT=$(echo "$PAGE_DATA" | jq '. | length')
-            
-            if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ] || [ -z "$COUNT" ]; then
+
+            if [ -z "$PAGE_DATA" ]; then
+              echo "Empty response on page $PAGE"
               break
             fi
-            
+
+            COUNT=$(echo "$PAGE_DATA" | jq 'length // 0')
+
+            if [ "$COUNT" = "0" ] || [ -z "$COUNT" ]; then
+              echo "No more results on page $PAGE"
+              break
+            fi
+
             ALL_PAYMENTS=$(echo "$ALL_PAYMENTS" "$PAGE_DATA" | jq -s '.[0] + .[1]')
-            echo "Fetched page $PAGE - got $COUNT payments"
-            
-            # Check if there are more pages
-            HAS_MORE=$(echo "$RESPONSE" | jq '.pagination.next_page // empty')
-            if [ -z "$HAS_MORE" ] || [ "$HAS_MORE" = "null" ]; then
+            TOTAL_FETCHED=$((TOTAL_FETCHED + COUNT))
+            echo "Page $PAGE: +$COUNT (total: $TOTAL_FETCHED)"
+
+            # Check pagination
+            TOTAL_PAGES=$(echo "$RESPONSE" | jq -r '.pagination.total_pages // empty')
+            if [ -n "$TOTAL_PAGES" ] && [ "$TOTAL_PAGES" != "null" ] && [ "$PAGE" -ge "$TOTAL_PAGES" ]; then
+              echo "Reached last page ($TOTAL_PAGES)"
               break
             fi
-            
+
             if [ "$COUNT" -lt 50 ]; then
               break
             fi
-            
+
             PAGE=$((PAGE + 1))
-            sleep 1
+            sleep 0.5
           done
-          
-          TOTAL=$(echo "$ALL_PAYMENTS" | jq '. | length')
-          echo "Total payments fetched: $TOTAL"
-          echo "$ALL_PAYMENTS" | jq '.' > whop-payments.json
+
+          FRESH_COUNT=$(echo "$ALL_PAYMENTS" | jq 'length')
+          echo ""
+          echo "Fresh data: $FRESH_COUNT payments fetched"
+
+          # Merge with existing data (accumulate, never lose records)
+          if [ -f whop-payments.json ]; then
+            EXISTING_COUNT=$(jq 'length' whop-payments.json)
+            echo "Existing on disk: $EXISTING_COUNT payments"
+
+            if [ "$FRESH_COUNT" -gt 0 ]; then
+              # Merge: deduplicate by payment ID, fresh data wins for conflicts
+              jq -s '
+                (.[0] + .[1]) |
+                group_by(.id) |
+                map(last) |
+                sort_by(-.created_at, -.paid_at)
+              ' whop-payments.json <(echo "$ALL_PAYMENTS") > whop-payments-merged.json
+
+              MERGED_COUNT=$(jq 'length' whop-payments-merged.json)
+              echo "After merge: $MERGED_COUNT unique payments"
+
+              # Safety: never shrink by >10%
+              THRESHOLD=$((EXISTING_COUNT * 9 / 10))
+              if [ "$MERGED_COUNT" -lt "$THRESHOLD" ]; then
+                echo "WARNING: Merged ($MERGED_COUNT) < 90% of existing ($EXISTING_COUNT). Skipping update."
+                rm whop-payments-merged.json
+              else
+                mv whop-payments-merged.json whop-payments.json
+              fi
+            else
+              echo "No fresh data from API. Keeping existing file."
+            fi
+          else
+            echo "No existing file. Writing fresh data."
+            echo "$ALL_PAYMENTS" | jq '.' > whop-payments.json
+          fi
+
+          # Summary
+          FINAL=$(jq 'length' whop-payments.json)
+          PAID=$(jq '[.[] | select(.status == "paid" and .final_amount > 0)] | length' whop-payments.json)
+          REVENUE=$(jq '[.[] | select(.status == "paid" and .final_amount > 0) | .final_amount] | add // 0' whop-payments.json)
+          echo ""
+          echo "=== Summary ==="
+          echo "Total: $FINAL | Paid w/revenue: $PAID | Total revenue: \$$REVENUE"
 
       - name: Commit and push
         run: |
