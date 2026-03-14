@@ -1,0 +1,9 @@
+{
+  "baseFontSize": 16,
+  "alwaysUpdateLinks": true,
+  "newFileLocation": "folder",
+  "newFileFolderPath": "Daily Notes",
+  "attachmentFolderPath": "Attachments",
+  "showLineNumber": true,
+  "strictLineBreaks": false
+}
