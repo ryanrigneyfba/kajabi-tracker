@@ -144,6 +144,21 @@
     const WHOP_API_URL = "https://api.whop.com/api/v5/company/payments";
     const WHOP_DATA_URL = "whop-payments.json";
 
+    // Fixed monthly costs (base salaries + fixed spend). Edit these numbers to change fixed costs.
+    // NOTE: the 20% Sales and 5% Marketing rev shares are computed live elsewhere and are NOT included here.
+    //   Sales      = 20% rev share (live) + $2k Sales Manager base (below)
+    //   Marketing  = 5% rev share (live)  + $4k Media Buyer base (below)
+    //   Fulfillment= $18k (Coaches $15k + VA $1k + Agency Manager $1k + SV Developer $1k)
+    const FIXED_COSTS = [
+        { category: "Sales Manager", amount: 2000 },
+        { category: "Media Buyer", amount: 4000 },
+        { category: "Coaches", amount: 15000 },
+        { category: "VA", amount: 1000 },
+        { category: "Agency Manager", amount: 1000 },
+        { category: "SV Developer", amount: 1000 },
+        { category: "Software", amount: 4842.70 },
+    ];
+
     // Skeleton Component
     const Skeleton = ({className}) => (
         <div className={`skeleton ${className}`}></div>
@@ -358,16 +373,8 @@
                     setTiktokExpenses(expenses);
                 }
 
-                if (fixedCostsRes && fixedCostsRes.ok) {
-                    const fixedCsv = await fixedCostsRes.text();
-                    const fixedData = parseCSV(fixedCsv);
-                    const excludeCategories = ['TOTAL EXPENSES', 'AFFILIATE PAYOUTS (PROGRAM SALES)', 'SALES TEAM PAYOUTS', 'ADS SPEND'];
-                    const costs = fixedData
-                        .filter(row => row.category && !excludeCategories.includes(row.category.toUpperCase()))
-                        .map(row => ({ category: row.category || '', amount: parseFloat(row['total ($)']) || 0 }))
-                        .filter(c => c.category);
-                    setFixedCosts(costs);
-                }
+                // Fixed costs are defined in the FIXED_COSTS config above (no longer pulled from the sheet)
+                setFixedCosts(FIXED_COSTS);
 
                 if (ga4SessionsRes && ga4SessionsRes.ok) {
                     const ga4Csv = await ga4SessionsRes.text();
@@ -823,17 +830,32 @@
         const totalRevenue = filteredSales.reduce((s, x) => s + x.revenue, 0);
         const avgOrder = filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0;
         const totalAdSpend = parseFloat(metaSpend || 0) + parseFloat(tiktokSpend || 0) + parseFloat(googleSpend || 0);
-        const affiliateCommission = totalRevenue * 0.05;
-        const commissionableSales = filteredSales.filter(s => s.revenue > 999);
-        const salesTeamCommission = commissionableSales.reduce((sum, s) => sum + (s.revenue * 0.20), 0);
-        const totalCommissions = affiliateCommission + salesTeamCommission;
-        const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange;
-        const profit = totalRevenue - totalExpenses;
+
+        // Whop revenue (net of refunds) — computed before commissions so rev-share can include it
         const whopRevenue = filteredWhopPayments.reduce((sum, p) => sum + p.amount, 0);
         const whopRefunds = filteredWhopPayments.reduce((sum, p) => sum + p.refunded, 0);
         const whopNet = whopRevenue - whopRefunds;
+
+        // Rev-share commissions apply to Info (Kajabi) + Whop revenue, NOT agency.
+        //   Marketing (media buyer) = 5% of all Info + Whop revenue
+        //   Sales = 20% of high-ticket (>$999) Info sales + high-ticket Whop payments
+        // Base salaries ($2k sales mgr, $4k media buyer, $18k fulfillment, software) live in the Fixed Costs sheet.
+        const infoMarketingComm = totalRevenue * 0.05;
+        const whopMarketingComm = whopNet * 0.05;
+        const infoSalesComm = filteredSales.filter(s => s.revenue > 999).reduce((sum, s) => sum + s.revenue * 0.20, 0);
+        const whopSalesComm = filteredWhopPayments.filter(p => p.amount > 999).reduce((sum, p) => sum + p.amount * 0.20, 0);
+        const affiliateCommission = infoMarketingComm + whopMarketingComm; // Marketing (5%)
+        const salesTeamCommission = infoSalesComm + whopSalesComm;         // Sales (20%)
+        const totalCommissions = affiliateCommission + salesTeamCommission;
+        const whopCommissions = whopMarketingComm + whopSalesComm;         // commissions attributable to Whop
+
+        const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange;
+        // Info Profit bears only info-side commissions (Whop commissions are charged to the Whop side)
+        const profit = totalRevenue - totalAdSpend - infoMarketingComm - infoSalesComm - fixedCostsForRange;
         const profitIncludingAgency = profit;
-        const profitIncludingWhop = profit + whopNet;
+        const profitIncludingWhop = profit + whopNet - whopCommissions;
+        // Combined = Info profit + Agency profit + Whop net contribution (after its own commissions)
+        const combinedProfit = profit + agencyProfitForRange + whopNet - whopCommissions;
 
         // Calculate previous period profit for comparison
         const prevAffiliateComm = previousPeriodData.revenue * 0.05;
@@ -1121,15 +1143,15 @@
                                         </div>
                                     )}
                                 </div>
-                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: (profit + agencyProfitForRange + whopNet) >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}}>
+                                <div className="fade-in fade-in-delay-2 card-glow rounded-2xl p-6 transition-all duration-300" style={{borderColor: (combinedProfit) >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}}>
                                     <div className="flex items-center gap-2 mb-2">
-                                        <div className={`w-8 h-8 rounded-lg ${(profit + agencyProfitForRange + whopNet) >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'} flex items-center justify-center ${(profit + agencyProfitForRange + whopNet) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <div className={`w-8 h-8 rounded-lg ${(combinedProfit) >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'} flex items-center justify-center ${(combinedProfit) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                             <Icons.profit />
                                         </div>
                                         <span className="text-slate-400 text-sm">Combined Profit</span>
                                     </div>
-                                    <p className={`text-3xl font-bold ${(profit + agencyProfitForRange + whopNet) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        <AnimatedNumber value={profit + agencyProfitForRange + whopNet} prefix="$" />
+                                    <p className={`text-3xl font-bold ${(combinedProfit) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <AnimatedNumber value={combinedProfit} prefix="$" />
                                     </p>
                                     <div className="mt-2">
                                         <span className="text-xs text-slate-500">Info + Agency + Whop</span>
@@ -1212,10 +1234,10 @@
                                 <p className="text-amber-400/70 text-xs mt-1">No paid Whop payments in this date range</p>
                             )}
                         </div>
-                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: (profit + agencyProfitForRange + whopNet) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}}>
+                        <div className="fade-in fade-in-delay-3 card-glow rounded-2xl p-5" style={{borderColor: (combinedProfit) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}}>
                             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Combined Profit</p>
-                            <p className={`text-xl font-bold ${(profit + agencyProfitForRange + whopNet) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {(profit + agencyProfitForRange + whopNet) >= 0 ? '' : '-'}${Math.abs(Math.round(profit + agencyProfitForRange + whopNet)).toLocaleString()}
+                            <p className={`text-xl font-bold ${(combinedProfit) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {(combinedProfit) >= 0 ? '' : '-'}${Math.abs(Math.round(combinedProfit)).toLocaleString()}
                             </p>
                             <p className="text-slate-600 text-xs mt-1">Info + Agency + Whop</p>
                         </div>
@@ -1286,7 +1308,7 @@
                                 <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
                             </div>
                             <div className="bg-white/5 rounded-xl p-4">
-                                <p className="text-slate-500 text-xs mb-1">Affiliate (5%)</p>
+                                <p className="text-slate-500 text-xs mb-1">Marketing (5%)</p>
                                 <p className="text-lg font-semibold text-orange-400">${affiliateCommission.toFixed(2)}</p>
                             </div>
                             <div className="bg-white/5 rounded-xl p-4">
