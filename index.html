@@ -456,7 +456,8 @@
                     product: p.product?.title || p.product_id || '',
                     user: p.user?.username || p.user?.email || p.user_id || '',
                     currency: p.currency || 'usd',
-                    refunded: parseFloat(p.refunded_amount || 0)
+                    refunded: parseFloat(p.refunded_amount || 0),
+                    paymentMethod: p.payment_method_type || ''
                 })).filter(p => p.date && p.amount > 0);
                 setWhopPayments(processedWhop);
 
@@ -848,14 +849,16 @@
         const salesTeamCommission = infoSalesComm + whopSalesComm;         // Sales (20%)
         const totalCommissions = affiliateCommission + salesTeamCommission;
         const whopCommissions = whopMarketingComm + whopSalesComm;         // commissions attributable to Whop
+        // Clarity Pay financing fee: 20% of any Whop payment processed via Clarity Pay (Whop-side cost)
+        const clarityPayFee = filteredWhopPayments.filter(p => p.paymentMethod === 'claritypay').reduce((sum, p) => sum + p.amount * 0.20, 0);
 
-        const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange;
+        const totalExpenses = totalAdSpend + totalCommissions + fixedCostsForRange + clarityPayFee;
         // Info Profit bears only info-side commissions (Whop commissions are charged to the Whop side)
         const profit = totalRevenue - totalAdSpend - infoMarketingComm - infoSalesComm - fixedCostsForRange;
         const profitIncludingAgency = profit;
-        const profitIncludingWhop = profit + whopNet - whopCommissions;
-        // Combined = Info profit + Agency profit + Whop net contribution (after its own commissions)
-        const combinedProfit = profit + agencyProfitForRange + whopNet - whopCommissions;
+        const profitIncludingWhop = profit + whopNet - whopCommissions - clarityPayFee;
+        // Combined = Info profit + Agency profit + Whop net contribution (after its own commissions & Clarity Pay fees)
+        const combinedProfit = profit + agencyProfitForRange + whopNet - whopCommissions - clarityPayFee;
 
         // Calculate previous period profit for comparison
         const prevAffiliateComm = previousPeriodData.revenue * 0.05;
@@ -1302,7 +1305,7 @@
                             <span className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-400 to-red-500"></span>
                             Expenses Breakdown
                         </h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
                             <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Ad Spend</p>
                                 <p className="text-lg font-semibold text-orange-400">${totalAdSpend.toLocaleString()}</p>
@@ -1314,6 +1317,10 @@
                             <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Sales Team (20%)</p>
                                 <p className="text-lg font-semibold text-orange-400">${salesTeamCommission.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-4">
+                                <p className="text-slate-500 text-xs mb-1">Clarity Pay (20%)</p>
+                                <p className="text-lg font-semibold text-orange-400">${clarityPayFee.toFixed(2)}</p>
                             </div>
                             <div className="bg-white/5 rounded-xl p-4">
                                 <p className="text-slate-500 text-xs mb-1">Fixed Costs</p>
