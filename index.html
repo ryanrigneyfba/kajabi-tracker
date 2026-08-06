@@ -836,6 +836,11 @@
         const whopRevenue = filteredWhopPayments.reduce((sum, p) => sum + p.amount, 0);
         const whopRefunds = filteredWhopPayments.reduce((sum, p) => sum + p.refunded, 0);
         const whopNet = whopRevenue - whopRefunds;
+        // Split Whop into its two streams: Clarity Pay (financed coaching) vs Whop memberships/subs
+        const whopClarityPayments = filteredWhopPayments.filter(p => p.paymentMethod === 'claritypay');
+        const whopMemberPayments = filteredWhopPayments.filter(p => p.paymentMethod !== 'claritypay');
+        const whopClarityNet = whopClarityPayments.reduce((sum, p) => sum + (p.amount - p.refunded), 0);
+        const whopMemberNet = whopMemberPayments.reduce((sum, p) => sum + (p.amount - p.refunded), 0);
 
         // Rev-share commissions apply to Info (Kajabi) + Whop revenue, NOT agency.
         //   Marketing (media buyer) = 5% of all Info + Whop revenue
@@ -1232,7 +1237,10 @@
                             <p className="text-xl font-bold text-purple-400">
                                 ${Math.round(whopNet).toLocaleString()}
                             </p>
-                            <p className="text-slate-600 text-xs mt-1">{filteredWhopPayments.length} payment{filteredWhopPayments.length !== 1 ? 's' : ''} of {whopPayments.length} total</p>
+                            <div className="mt-2 space-y-0.5">
+                                <p className="text-slate-500 text-xs flex justify-between"><span>Clarity Pay</span><span className="text-purple-300">${Math.round(whopClarityNet).toLocaleString()} · {whopClarityPayments.length}</span></p>
+                                <p className="text-slate-500 text-xs flex justify-between"><span>Memberships</span><span className="text-purple-300">${Math.round(whopMemberNet).toLocaleString()} · {whopMemberPayments.length}</span></p>
+                            </div>
                             {whopPayments.length > 0 && filteredWhopPayments.length === 0 && (
                                 <p className="text-amber-400/70 text-xs mt-1">No paid Whop payments in this date range</p>
                             )}
