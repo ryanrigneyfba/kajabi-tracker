@@ -448,11 +448,19 @@
                         }
                     } catch(e) { console.warn("Whop API error (CORS may block client-side):", e); }
                 }
-                const processedWhop = (Array.isArray(whopData) ? whopData : []).filter(p => p.status === 'paid' && p.final_amount > 0).map((p, idx) => ({
+                // Count: all PAID Whop payments, plus OPEN/PENDING Clarity Pay coaching (active financing,
+                // recorded once the deal is booked). Defaulted plans get marked 'void' so they're excluded.
+                const isClarity = (p) => p.payment_method_type === 'claritypay';
+                const countable = (p) => p.final_amount > 0 && (
+                    p.status === 'paid' ||
+                    ((p.status === 'open' || p.status === 'pending') && isClarity(p))
+                );
+                const processedWhop = (Array.isArray(whopData) ? whopData : []).filter(countable).map((p, idx) => ({
                     id: p.id || `whop-${idx}`,
                     date: (() => { const ts = p.paid_at || p.created_at; if (!ts) return ''; if (typeof ts === 'number') return new Date(ts * 1000).toISOString().split('T')[0]; return String(ts).split('T')[0]; })(),
                     amount: (parseFloat(p.final_amount || p.subtotal || p.amount || 0)), // Whop amounts are in dollars
                     status: p.status || 'unknown',
+                    pending: p.status !== 'paid', // open/pending Clarity Pay financing not yet fully collected
                     product: p.product?.title || p.product_id || '',
                     user: p.user?.username || p.user?.email || p.user_id || '',
                     currency: p.currency || 'usd',
@@ -841,6 +849,9 @@
         const whopMemberPayments = filteredWhopPayments.filter(p => p.paymentMethod !== 'claritypay');
         const whopClarityNet = whopClarityPayments.reduce((sum, p) => sum + (p.amount - p.refunded), 0);
         const whopMemberNet = whopMemberPayments.reduce((sum, p) => sum + (p.amount - p.refunded), 0);
+        // Portion of Whop revenue that is still pending (open/pending Clarity Pay financing, not yet collected)
+        const whopPendingPayments = filteredWhopPayments.filter(p => p.pending);
+        const whopPendingNet = whopPendingPayments.reduce((sum, p) => sum + (p.amount - p.refunded), 0);
 
         // Rev-share commissions apply to Info (Kajabi) + Whop revenue, NOT agency.
         //   Marketing (media buyer) = 5% of all Info + Whop revenue
@@ -1240,6 +1251,9 @@
                             <div className="mt-2 space-y-0.5">
                                 <p className="text-slate-500 text-xs flex justify-between"><span>Clarity Pay</span><span className="text-purple-300">${Math.round(whopClarityNet).toLocaleString()} · {whopClarityPayments.length}</span></p>
                                 <p className="text-slate-500 text-xs flex justify-between"><span>Memberships</span><span className="text-purple-300">${Math.round(whopMemberNet).toLocaleString()} · {whopMemberPayments.length}</span></p>
+                                {whopPendingNet > 0 && (
+                                    <p className="text-amber-400/70 text-xs flex justify-between"><span>incl. pending</span><span>${Math.round(whopPendingNet).toLocaleString()} · {whopPendingPayments.length}</span></p>
+                                )}
                             </div>
                             {whopPayments.length > 0 && filteredWhopPayments.length === 0 && (
                                 <p className="text-amber-400/70 text-xs mt-1">No paid Whop payments in this date range</p>
